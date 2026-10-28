@@ -32,7 +32,8 @@ impl AppState {
         let connection = Connection::open(path).map_err(|error| error.to_string())?;
         connection
             .execute_batch(
-                "CREATE TABLE IF NOT EXISTS activity (
+                "PRAGMA secure_delete = ON;
+                CREATE TABLE IF NOT EXISTS activity (
                     day TEXT NOT NULL,
                     app TEXT NOT NULL,
                     seconds INTEGER NOT NULL DEFAULT 0,
@@ -123,12 +124,19 @@ impl AppState {
     }
 
     pub fn clear_data(&self) -> Result<(), String> {
-        let db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
-        // Pause and invalidate all samples atomically with the delete.
+        let mut db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
+        // Block new samples before removing anything. Consent and writes share this lock.
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.tracking.store(false, Ordering::SeqCst);
-        db.execute_batch("DELETE FROM activity_events; DELETE FROM activity;")
-            .map_err(|error| error.to_string())
+        let tx = db.transaction().map_err(|error| error.to_string())?;
+        tx.execute("DELETE FROM activity_events", [])
+            .map_err(|error| error.to_string())?;
+        tx.execute("DELETE FROM activity", [])
+            .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        // Rebuild the database so freed pages from older versions are not retained.
+        // This does not erase external backups, snapshots or SSD wear-level copies.
+        db.execute_batch("VACUUM").map_err(|error| error.to_string())
     }
 
     pub fn activity(&self) -> Result<Vec<ActivityRow>, String> {
@@ -226,6 +234,30 @@ mod tests {
         state.set_tracking(true).expect("resume after clear");
         state.record("Old app", 5, before_clear).expect("ignore pre-clear");
         assert!(state.timeline().expect("timeline").is_empty());
+    }
+
+    #[test]
+    fn cleared_activity_stays_deleted_after_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "vibefriend-delete-{}-{}.sqlite",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        {
+            let state = AppState::new(path.clone()).expect("create database");
+            state.set_tracking(true).expect("start");
+            state.record("Private app", 5, state.generation()).expect("record");
+            assert_eq!(state.timeline().expect("timeline").len(), 1);
+            state.clear_data().expect("delete");
+            assert!(!state.is_tracking());
+        }
+        {
+            let reopened = AppState::new(path.clone()).expect("reopen database");
+            assert!(!reopened.is_tracking());
+            assert!(reopened.activity().expect("daily records").is_empty());
+            assert!(reopened.timeline().expect("events").is_empty());
+        }
+        std::fs::remove_file(path).expect("remove test database");
     }
 
     #[test]
