@@ -36,7 +36,7 @@ impl AppState {
 
         Ok(Self {
             db: Mutex::new(connection),
-            tracking: AtomicBool::new(true),
+            tracking: AtomicBool::new(false),
         })
     }
 
@@ -49,6 +49,9 @@ impl AppState {
     }
 
     pub fn record(&self, app: &str, seconds: i64) -> Result<(), String> {
+        if seconds <= 0 || app.trim().is_empty() {
+            return Err("activity requires an application and positive duration".to_string());
+        }
         let day = Local::now().format("%Y-%m-%d").to_string();
         let updated_at = Utc::now().to_rfc3339();
         let db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
@@ -87,7 +90,12 @@ impl AppState {
         let rows = self.activity()?;
         let mut output = String::from("day,app,seconds\n");
         for row in rows {
-            let escaped = row.app.replace('"', "\"\"");
+            let app = if row.app.chars().next().is_some_and(|ch| matches!(ch, '=' | '+' | '-' | '@' | '\t' | '\r')) {
+                format!("'{}", row.app)
+            } else {
+                row.app
+            };
+            let escaped = app.replace('"', "\"\"");
             output.push_str(&format!("{},\"{}\",{}\n", row.day, escaped, row.seconds));
         }
         Ok(output)
@@ -97,6 +105,24 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collection_requires_explicit_opt_in() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        assert!(!state.is_tracking());
+        state.set_tracking(true);
+        assert!(state.is_tracking());
+        state.set_tracking(false);
+        assert!(!state.is_tracking());
+    }
+
+    #[test]
+    fn csv_escapes_quotes_and_spreadsheet_formulas() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.record("=HYPERLINK(\"x\")", 5).expect("sample");
+        assert!(state.csv().expect("csv").contains("\"'=HYPERLINK(\"\"x\"\")\""));
+        assert!(state.record("Browser", 0).is_err());
+    }
 
     #[test]
     fn sqlite_round_trip() {
