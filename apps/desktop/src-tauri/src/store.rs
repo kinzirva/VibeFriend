@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use chrono::{Local, Utc};
+use chrono::{DateTime, Duration, Local, Utc};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
@@ -76,13 +77,37 @@ impl AppState {
     }
 
     pub fn record(&self, app: &str, seconds: i64, generation: u64) -> Result<(), String> {
+        self.record_at(app, seconds, generation, Utc::now())
+    }
+
+    // Daily reports must attribute each sampled second to the day it occurred,
+    // not the day the final tick was written. This also handles local DST changes.
+    fn daily_buckets(ended_at: DateTime<Utc>, seconds: i64) -> BTreeMap<String, i64> {
+        let mut buckets = BTreeMap::new();
+        let started_at = ended_at - Duration::seconds(seconds);
+        for offset in 0..seconds {
+            // Attribute each complete second by its midpoint; a 5-second sample
+            // straddling midnight must not be credited entirely to tomorrow.
+            let midpoint = started_at + Duration::seconds(offset) + Duration::milliseconds(500);
+            let day = midpoint.with_timezone(&Local).format("%Y-%m-%d").to_string();
+            *buckets.entry(day).or_insert(0) += 1;
+        }
+        buckets
+    }
+
+    fn record_at(
+        &self,
+        app: &str,
+        seconds: i64,
+        generation: u64,
+        ended_at: DateTime<Utc>,
+    ) -> Result<(), String> {
         if seconds <= 0 || app.trim().is_empty() {
             return Err("activity requires an application and positive duration".to_string());
         }
-        let now = Utc::now();
-        let day = Local::now().format("%Y-%m-%d").to_string();
-        let ended_at = now.to_rfc3339();
-        let started_at = (now - chrono::Duration::seconds(seconds)).to_rfc3339();
+        let buckets = Self::daily_buckets(ended_at, seconds);
+        let ended_at_text = ended_at.to_rfc3339();
+        let started_at_text = (ended_at - Duration::seconds(seconds)).to_rfc3339();
         let mut db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
         // Recheck while holding the database lock so a paused/cleared collector
         // cannot insert a stale sample after the user has disabled tracking.
@@ -90,18 +115,20 @@ impl AppState {
             return Ok(());
         }
         let tx = db.transaction().map_err(|error| error.to_string())?;
-        tx.execute(
-            "INSERT INTO activity(day, app, seconds, updated_at)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(day, app) DO UPDATE SET
-               seconds = seconds + excluded.seconds,
-               updated_at = excluded.updated_at",
-            params![day, app, seconds, ended_at],
-        ).map_err(|error| error.to_string())?;
+        for (day, day_seconds) in buckets {
+            tx.execute(
+                "INSERT INTO activity(day, app, seconds, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(day, app) DO UPDATE SET
+                   seconds = seconds + excluded.seconds,
+                   updated_at = excluded.updated_at",
+                params![day, app, day_seconds, ended_at_text],
+            ).map_err(|error| error.to_string())?;
+        }
         tx.execute(
             "INSERT INTO activity_events(started_at, ended_at, app, seconds)
              VALUES (?1, ?2, ?3, ?4)",
-            params![started_at, ended_at, app, seconds],
+            params![started_at_text, ended_at_text, app, seconds],
         ).map_err(|error| error.to_string())?;
         tx.commit().map_err(|error| error.to_string())
     }
@@ -320,6 +347,45 @@ mod tests {
         assert!(csv.starts_with("day,app,seconds\n"));
         assert!(csv.contains("\"Browser, \"\"Private\"\"\nTab\",5"));
         assert!(csv.contains("\"'@SUM(A1:A2)\",5"));
+    }
+
+    #[test]
+    fn sample_crossing_local_midnight_is_split_between_daily_reports() {
+        use chrono::{NaiveDate, TimeZone};
+        let midnight = Local.from_local_datetime(
+            &NaiveDate::from_ymd_opt(2026, 10, 29).unwrap().and_hms_opt(0, 0, 0).unwrap()
+        ).single().expect("unambiguous local midnight");
+        let ended_at = midnight.with_timezone(&Utc) + Duration::seconds(3);
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("enable tracking");
+        state.record_at("Editor", 5, state.generation(), ended_at).expect("sample");
+
+        let rows = state.activity().expect("daily rows");
+        assert_eq!(rows.len(), 2, "midnight-spanning samples need two daily rows");
+        assert_eq!(rows[0].day, "2026-10-29");
+        assert_eq!(rows[0].seconds, 3);
+        assert_eq!(rows[1].day, "2026-10-28");
+        assert_eq!(rows[1].seconds, 2);
+        let events = state.timeline().expect("events");
+        assert_eq!(events.len(), 1, "timeline keeps one original foreground sample");
+        assert_eq!(events[0].seconds, 5);
+        assert_eq!(rows.iter().map(|row| row.seconds).sum::<i64>(), events[0].seconds);
+    }
+
+    #[test]
+    fn stale_midnight_sample_cannot_write_after_pause() {
+        use chrono::{NaiveDate, TimeZone};
+        let midnight = Local.from_local_datetime(
+            &NaiveDate::from_ymd_opt(2026, 10, 29).unwrap().and_hms_opt(0, 0, 0).unwrap()
+        ).single().expect("unambiguous local midnight");
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("enable tracking");
+        let generation = state.generation();
+        state.set_tracking(false).expect("pause");
+        state.record_at("Editor", 5, generation, midnight.with_timezone(&Utc) + Duration::seconds(3))
+            .expect("stale sample ignored");
+        assert!(state.activity().expect("daily rows").is_empty());
+        assert!(state.timeline().expect("events").is_empty());
     }
 
 }
