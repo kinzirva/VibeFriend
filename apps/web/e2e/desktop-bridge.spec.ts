@@ -87,3 +87,52 @@ test("desktop dashboard calls consent, timeline, export and delete IPC commands"
   ]));
   expect(state.calls.filter((command: string) => command === "clear_data")).toHaveLength(1);
 });
+
+test("late desktop poll cannot resurrect data after confirmed deletion", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = {
+      tracking: false,
+      rows: [{ day: "2026-10-28", app: "Private editor", seconds: 5 }],
+      events: [{ started_at: "2026-10-28T12:00:00Z", ended_at: "2026-10-28T12:00:05Z", app: "Private editor", seconds: 5 }],
+      firstRead: true,
+      resolveFirstRead: null as null | (() => void),
+    };
+    Object.defineProperty(window, "__VF_TEST_BRIDGE__", { value: state });
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {
+        invoke: async (command: string) => {
+          switch (command) {
+            case "get_activity":
+              if (state.firstRead) {
+                state.firstRead = false;
+                const snapshot = [...state.rows];
+                return new Promise((resolve) => { state.resolveFirstRead = () => resolve(snapshot); });
+              }
+              return [...state.rows];
+            case "get_tracking": return state.tracking;
+            case "get_timeline": return [...state.events];
+            case "clear_data":
+              state.tracking = false;
+              state.rows = [];
+              state.events = [];
+              return null;
+            default: throw new Error("Unexpected desktop IPC command: " + command);
+          }
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => Boolean(Reflect.get(window, "__VF_TEST_BRIDGE__").resolveFirstRead))).toBe(true);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete local data" }).click();
+  await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
+
+  // The earlier IPC query returns a snapshot taken BEFORE deletion.
+  await page.evaluate(() => Reflect.get(window, "__VF_TEST_BRIDGE__").resolveFirstRead());
+  await page.waitForTimeout(50);
+  await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
+  await expect(page.locator(".metrics article").nth(1).locator("strong")).toHaveText("0");
+  await expect(page.locator(".panel.timeline").last().getByText("Private editor")).toHaveCount(0);
+});
