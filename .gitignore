@@ -1,0 +1,8 @@
+node_modules/
+dist/
+target/
+.DS_Store
+*.log
+.vscode/
+.idea/
+apps/desktop/src-tauri/icons/
