@@ -1,0 +1,75 @@
+name: Foreground collector VM probe
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/src-tauri/src/collector.rs
+      - apps/desktop/src-tauri/src/bin/foreground_probe.rs
+      - .github/workflows/foreground-vm-probe.yml
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - apps/desktop/src-tauri/src/collector.rs
+      - apps/desktop/src-tauri/src/bin/foreground_probe.rs
+      - .github/workflows/foreground-vm-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-foreground:
+    name: Windows foreground fixture (Notepad)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate Tauri icons for diagnostic build
+        run: |
+          npm install
+          npm run icon --workspace @vibefriend/desktop
+          npm run build:web
+      - name: Launch and foreground Notepad
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proc = Start-Process notepad.exe -PassThru
+          Start-Sleep -Seconds 3
+          $proc.Refresh()
+          if ($proc.HasExited) { throw "Notepad exited unexpectedly" }
+          $activated = (New-Object -ComObject WScript.Shell).AppActivate($proc.Id)
+          if (-not $activated) { throw "Unable to foreground Notepad: VM may lack an interactive desktop" }
+          Start-Sleep -Seconds 2
+      - name: Verify production Windows foreground detector
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin foreground_probe -- notepad
+
+  macos-foreground:
+    name: macOS foreground fixture (TextEdit)
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate Tauri icons for diagnostic build
+        run: |
+          npm install
+          npm run icon --workspace @vibefriend/desktop
+          npm run build:web
+      - name: Launch and foreground TextEdit
+        run: |
+          set -euo pipefail
+          open -a TextEdit
+          sleep 3
+          # Activation is best effort: the foreground probe itself must pass.
+          osascript -e 'tell application "TextEdit" to activate' || true
+      - name: Verify production macOS NSWorkspace detector
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin foreground_probe -- TextEdit
