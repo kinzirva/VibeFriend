@@ -1,0 +1,41 @@
+name: Web UI smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - .github/workflows/web-ui-smoke.yml
+      - package.json
+  pull_request:
+    paths:
+      - apps/web/**
+      - .github/workflows/web-ui-smoke.yml
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    name: Chromium import/export/privacy smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck && npm run test:csv && npm run test:ui --workspace @vibefriend/web
+      - name: Upload failed browser trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-ui-smoke-trace
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          if-no-files-found: ignore
