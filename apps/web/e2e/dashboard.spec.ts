@@ -117,3 +117,33 @@ test("focus countdown start, pause, resume and reset never enables tracking", as
   await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("50:00");
   await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
 });
+
+test("dashboard updates Today and This week after midnight without a reload", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-11-01T23:59:30Z") });
+  await page.goto("/");
+  const report = [
+    "day,app,seconds",
+    "2026-11-01,SundayApp,120",
+    "2026-11-02,MondayApp,180",
+    "",
+  ].join("\n");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "rollover.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(report),
+  });
+  await expect(page.getByText(/Imported 2 rows/)).toBeVisible();
+
+  await page.getByRole("button", { name: "This week" }).click();
+  await expect(page.locator(".barRow").getByText("SundayApp")).toBeVisible();
+  await expect(page.locator(".barRow").getByText("MondayApp")).toHaveCount(0);
+
+  // Cross the Sunday -> Monday boundary while leaving the page open.
+  await page.clock.fastForward(60_000);
+  await expect(page.locator(".barRow").getByText("MondayApp")).toBeVisible();
+  await expect(page.locator(".barRow").getByText("SundayApp")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Today" }).click();
+  await expect(page.locator(".barRow").getByText("MondayApp")).toBeVisible();
+  await expect(page.locator(".barRow").getByText("SundayApp")).toHaveCount(0);
+});
