@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test.use({ timezoneId: "UTC" });
+
 const sample = [
   "day,app,seconds",
   '2026-10-28,"Browser, ""Private""",5',
@@ -67,4 +69,30 @@ test("web mode does not invoke desktop APIs or send activity to remote services"
   await expect(page.getByRole("button", { name: "Import CSV" })).toHaveCount(0);
   await expect(page.locator(".privacy").getByText("No screenshots")).toBeVisible();
   expect(externalRequests).toEqual([]);
+});
+
+test("today/week/all reports respect Monday boundary and exclude future days", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-10-28T12:00:00Z"));
+  await page.goto("/");
+  const report = [
+    "day,app,seconds",
+    "2026-10-25,PreviousWeek,5",
+    "2026-10-26,Monday,10",
+    "2026-10-28,Today,15",
+    "2026-10-29,Future,20",
+    "",
+  ].join("\n");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "boundary.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(report),
+  });
+  const activeApps = page.locator(".metrics article").nth(1).locator("strong");
+  await expect(activeApps).toHaveText("1");
+  await page.getByRole("button", { name: "This week" }).click();
+  await expect(activeApps).toHaveText("2");
+  await expect(page.locator(".tableRow").filter({ hasText: "PreviousWeek" })).toHaveCount(0);
+  await expect(page.locator(".tableRow").filter({ hasText: "Future" })).toHaveCount(0);
+  await page.getByRole("button", { name: "All time" }).click();
+  await expect(activeApps).toHaveText("4");
 });
