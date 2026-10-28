@@ -31,7 +31,7 @@ test("desktop dashboard calls consent, timeline, export and delete IPC commands"
               state.tracking = args?.enabled === true;
               return null;
             case "export_csv":
-              return "day,app,seconds\\n2026-10-28,\\\"Editor\\\",5\\n";
+              return 'day,app,seconds\n2026-10-28,"Editor",5\n';
             case "clear_data":
               state.tracking = false;
               state.rows = [];
@@ -66,7 +66,7 @@ test("desktop dashboard calls consent, timeline, export and delete IPC commands"
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("vibefriend-activity.csv");
   expect(await readFile(await download.path(), "utf8"))
-    .toBe('day,app,seconds\\n2026-10-28,"Editor",5\\n');
+    .toBe('day,app,seconds\n2026-10-28,"Editor",5\n');
 
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Delete local data" }).click();
