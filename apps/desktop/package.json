@@ -1,0 +1,12 @@
+{
+  "name": "@vibefriend/desktop",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "tauri": "tauri",
+    "icon": "tauri icon ../../assets/icon.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
