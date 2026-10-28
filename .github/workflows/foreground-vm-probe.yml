@@ -25,6 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate Tauri icons for diagnostic build
+        run: |
+          npm install
+          npm run icon --workspace @vibefriend/desktop
       - name: Launch and foreground Notepad
         shell: pwsh
         run: |
@@ -47,6 +54,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate Tauri icons for diagnostic build
+        run: |
+          npm install
+          npm run icon --workspace @vibefriend/desktop
       - name: Launch and foreground TextEdit
         run: |
           set -euo pipefail
