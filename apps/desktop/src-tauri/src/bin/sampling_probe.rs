@@ -79,4 +79,31 @@ fn main() {
     assert!(state.timeline().expect("original connection after deletion").is_empty());
 
     println!("PASS: opt-in, real foreground sampling to SQLite, pause stability, reopen persistence and deletion");
+
+    // Verify the *real OS idle signal* crosses the production 60-second threshold.
+    // No synthetic input is sent during this phase. If a runner generates input
+    // in the background, fail as inconclusive instead of claiming idle coverage.
+    let idle_deadline = Instant::now() + Duration::from_secs(110);
+    loop {
+        if idle_duration().is_some_and(|idle| idle >= Duration::from_secs(IDLE_THRESHOLD_SECONDS)) {
+            break;
+        }
+        assert!(
+            Instant::now() < idle_deadline,
+            "VM never reached 60s OS-reported idle; idle smoke inconclusive"
+        );
+        thread::sleep(Duration::from_secs(2));
+    }
+    assert!(!user_is_active(), "idle gate must be closed after 60s without input");
+
+    // Reset any samples recorded while waiting for idle, then enable tracking.
+    // The collector must not write new samples while the OS remains idle.
+    state.clear_data().expect("clear before idle phase");
+    state.set_tracking(true).expect("enable while OS is idle");
+    thread::sleep(Duration::from_secs(12));
+    assert!(!user_is_active(), "unexpected VM input during idle phase");
+    assert!(state.timeline().expect("idle timeline").is_empty());
+    assert!(state.activity().expect("idle totals").is_empty());
+    state.set_tracking(false).expect("pause after idle phase");
+    println!("PASS: real OS 60s idle gate prevents collector SQLite writes");
 }
