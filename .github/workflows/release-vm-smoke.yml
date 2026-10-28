@@ -1,0 +1,152 @@
+name: Release VM smoke
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-vm-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EVENT_TAG:-}" ]; then
+            tag="$EVENT_TAG"
+          else
+            tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          test -n "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Testing release: $tag"
+
+  windows-smoke:
+    name: Windows installer + launch smoke
+    needs: resolve-release
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Download published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --dir release --pattern "*x64-setup.exe" --pattern "SHA256SUMS.txt"
+          Get-ChildItem release | Format-Table Name, Length
+
+      - name: Verify Windows installer SHA256
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release -Filter "*x64-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer not found" }
+          $sumLine = Get-Content release/SHA256SUMS.txt | Where-Object { $_ -match [regex]::Escape($installer.Name) } | Select-Object -First 1
+          if (-not $sumLine) { throw "No SHA256 entry for $($installer.Name)" }
+          $expected = ($sumLine -split "\s+")[0].ToLowerInvariant()
+          $actual = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "expected=$expected"
+          Write-Host "actual=$actual"
+          if ($actual -ne $expected) { throw "SHA256 mismatch" }
+
+      - name: Silent install
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem release -Filter "*x64-setup.exe" | Select-Object -First 1).FullName
+          $proc = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait
+          if ($proc.ExitCode -ne 0) { throw "Installer exit code $($proc.ExitCode)" }
+
+      - name: Locate and launch installed app
+        shell: pwsh
+        run: |
+          $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ -and (Test-Path $_) }
+          $app = $null
+          foreach ($root in $roots) {
+            $app = Get-ChildItem -Path $root -Filter "VibeFriend.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($app) { break }
+          }
+          if (-not $app) { throw "Installed VibeFriend.exe not found" }
+          Write-Host "Launching $($app.FullName)"
+          $proc = Start-Process -FilePath $app.FullName -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) { throw "VibeFriend exited early with code $($proc.ExitCode)" }
+          Write-Host "VibeFriend stayed alive for 10 seconds (PID $($proc.Id))"
+          Stop-Process -Id $proc.Id -Force
+
+  macos-smoke:
+    name: macOS DMG + launch smoke
+    needs: resolve-release
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Download published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release --pattern "*aarch64.dmg" --pattern "SHA256SUMS.txt"
+          ls -lh release
+
+      - name: Verify macOS installer SHA256
+        run: |
+          set -euo pipefail
+          dmg="$(find release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          expected="$(grep "  $(basename "$dmg")$" release/SHA256SUMS.txt | awk '{print $1}')"
+          actual="$(shasum -a 256 "$dmg" | awk '{print $1}')"
+          echo "expected=$expected"
+          echo "actual=$actual"
+          test "$actual" = "$expected"
+
+      - name: Mount DMG and launch app
+        run: |
+          set -euo pipefail
+          dmg="$(find release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          attach_output="$(hdiutil attach "$dmg" -nobrowse -readonly)"
+          echo "$attach_output"
+          mount_point="$(echo "$attach_output" | awk '/\/Volumes\// {sub(/^.*\t/,""); print; exit}')"
+          test -d "$mount_point"
+          app="$(find "$mount_point" -maxdepth 2 -type d -name 'VibeFriend.app' -print -quit)"
+          test -n "$app"
+          mkdir -p "$RUNNER_TEMP/Applications"
+          cp -R "$app" "$RUNNER_TEMP/Applications/"
+          installed="$RUNNER_TEMP/Applications/VibeFriend.app"
+          bin="$installed/Contents/MacOS/VibeFriend"
+          test -x "$bin"
+          xattr -dr com.apple.quarantine "$installed" 2>/dev/null || true
+          echo "Launching $bin"
+          "$bin" >"$RUNNER_TEMP/vibefriend-macos.log" 2>&1 &
+          pid=$!
+          sleep 10
+          if ! kill -0 "$pid" 2>/dev/null; then
+            cat "$RUNNER_TEMP/vibefriend-macos.log" || true
+            exit 1
+          fi
+          echo "VibeFriend stayed alive for 10 seconds (PID $pid)"
+          kill "$pid" || true
+          wait "$pid" || true
+          hdiutil detach "$mount_point" || true
+
+      - name: Upload macOS launch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeFriend-macOS-smoke-log
+          path: ${{ runner.temp }}/vibefriend-macos.log
+          if-no-files-found: ignore
