@@ -1,5 +1,6 @@
 [package]
 name = "vibefriend"
+default-run = "vibefriend"
 version = "0.2.0"
 description = "Private, local-first activity tracker"
 authors = ["VibeFriend contributors"]
