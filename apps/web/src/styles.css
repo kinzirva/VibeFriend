@@ -63,3 +63,14 @@ footer { display: flex; justify-content: space-between; gap: 20px; color: #67789
 @media (max-width: 780px) {
   .actions { flex-wrap: wrap; justify-content: flex-end; }
 }
+
+.focus { margin-bottom: 14px; }
+.focus p { margin: 8px 0 0; font-size: 13px; }
+.focusClock { font-size: clamp(36px, 5vw, 56px); font-variant-numeric: tabular-nums; letter-spacing: -2px; color: #73e7c1; }
+.focusControls { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.focusActions { display: flex; gap: 8px; }
+.focusNote { display: block; margin-top: 14px; color: #91a4be; }
+@media (max-width: 780px) {
+  .focus .panelHead { align-items: flex-start; }
+  .focusControls { align-items: flex-start; }
+}

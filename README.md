@@ -11,6 +11,7 @@ VibeFriend is inspired by [Weft](https://github.com/tiann/weft), but the cross-p
 - Local SQLite storage
 - Opt-in start/pause tracking (off by default each time the desktop app starts)
 - Today, current-week and all-time app usage summaries
+- Optional 25/50-minute local focus countdown (does not block apps or alter tracking consent; resets on page close)
 - Recent timestamped activity samples in local SQLite (new recordings only)
 - Delete all local desktop activity records and pause collection
 - CSV export on desktop; CSV import/export in the browser dashboard
@@ -69,6 +70,6 @@ Foreground app sampling is an approximation of elapsed time, not proof of produc
 - CI builds Windows NSIS and macOS DMG. CI-hosted OS-runner smoke checks are not real-device, user-session, system-permission or signing/notarization acceptance.
 - Unsigned installers may trigger Windows SmartScreen or macOS Gatekeeper warnings. Apple Developer ID signing/notarization and Windows code signing require authorized credentials.
 - GitHub Pages is enabled using **GitHub Actions**. The web dashboard is published at https://kinzirva.github.io/VibeFriend/ ; verify browser interactions separately from CI deployment success.
-- Real-device installation, foreground collector accuracy, pause/resume, CSV export, and privacy verification are required before declaring P0 complete.
+- Real-device installation, foreground collector accuracy, pause/resume, CSV export, focus countdown and privacy verification are required before declaring P0 complete.
 
 See [ATTRIBUTION.md](./ATTRIBUTION.md).
