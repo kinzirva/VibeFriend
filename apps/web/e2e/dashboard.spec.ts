@@ -66,7 +66,7 @@ test("web mode does not invoke desktop APIs or send activity to remote services"
   await page.goto("/");
   expect(await page.evaluate(() => "__TAURI_INTERNALS__" in window)).toBe(false);
   await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Import CSV" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Import CSV" })).toBeVisible();
   await expect(page.locator(".privacy").getByText("No screenshots")).toBeVisible();
   expect(externalRequests).toEqual([]);
 });
