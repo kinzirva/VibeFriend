@@ -65,10 +65,10 @@ Add-Type -AssemblyName System.Windows.Forms
 
 #[cfg(target_os = "macos")]
 fn activate_second_app() {
-    // Launch Services activation is more reliable on hosted interactive VMs
-    // than AppleScript alone, especially after the idle fixture has run.
+    // Launch Calculator through Launch Services, then request foreground
+    // activation explicitly. The macOS `open` tool has no `--activate` flag.
     let result = std::process::Command::new("open")
-        .args(["-a", "Calculator", "--activate"])
+        .args(["-a", "Calculator"])
         .status()
         .expect("launch and activate Calculator");
     assert!(result.success(), "Calculator did not launch");
