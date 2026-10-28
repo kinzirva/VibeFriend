@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
@@ -57,18 +58,33 @@ fn user_is_active() -> bool {
 
 #[cfg(target_os = "macos")]
 fn foreground_application() -> Option<String> {
-    let output = Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to get name of first application process whose frontmost is true",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!name.is_empty()).then_some(name)
+    use objc::rc::autoreleasepool;
+    use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
+    use std::ffi::CStr;
+
+    // NSWorkspace.frontmostApplication reads process metadata without AppleScript
+    // or System Events Automation permission. No window title or document data.
+    autoreleasepool(|| unsafe {
+        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
+        if workspace.is_null() {
+            return None;
+        }
+        let application: *mut Object = msg_send![workspace, frontmostApplication];
+        if application.is_null() {
+            return None;
+        }
+        let name: *mut Object = msg_send![application, localizedName];
+        if name.is_null() {
+            return None;
+        }
+        let utf8: *const std::os::raw::c_char = msg_send![name, UTF8String];
+        if utf8.is_null() {
+            return None;
+        }
+        let value = CStr::from_ptr(utf8).to_str().ok()?.trim().to_string();
+        (!value.is_empty()).then_some(value)
+    })
 }
 
 #[cfg(target_os = "windows")]
