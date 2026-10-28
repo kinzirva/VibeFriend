@@ -43,6 +43,7 @@ jobs:
       - name: Typecheck and build shared web UI
         run: |
           npm run typecheck
+          npm run test:csv
           npm run build:web
 
       - name: Verify web output

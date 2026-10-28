@@ -271,4 +271,55 @@ mod tests {
         assert_eq!(state.csv().expect("csv").lines().count(), 506);
     }
 
+    #[test]
+    fn records_survive_reopen_but_tracking_consent_does_not() {
+        let path = std::env::temp_dir().join(format!(
+            "vibefriend-reopen-{}-{}.sqlite",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        {
+            let state = AppState::new(path.clone()).expect("create database");
+            assert!(!state.is_tracking(), "new installs must be opted out");
+            state.set_tracking(true).expect("resume");
+            let generation = state.generation();
+            state.record("Browser", 5, generation).expect("sample one");
+            state.record("Editor", 5, generation).expect("sample two");
+            state.set_tracking(false).expect("pause");
+            state.record("Browser", 5, generation).expect("stale sample is ignored");
+            assert_eq!(state.timeline().expect("events").len(), 2);
+        }
+        {
+            let reopened = AppState::new(path.clone()).expect("reopen database");
+            assert!(!reopened.is_tracking(), "consent must reset on restart");
+            let events = reopened.timeline().expect("persisted events");
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].app, "Editor");
+            assert_eq!(events[1].app, "Browser");
+            let rows = reopened.activity().expect("persisted daily totals");
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows.iter().map(|row| row.seconds).sum::<i64>(), 10);
+            reopened.record("No consent", 5, reopened.generation())
+                .expect("disabled collector is ignored");
+            assert_eq!(reopened.timeline().expect("unchanged events").len(), 2);
+            reopened.set_tracking(true).expect("resume after restart");
+            reopened.record("Browser", 5, reopened.generation()).expect("new sample");
+            assert_eq!(reopened.timeline().expect("new event").len(), 3);
+        }
+        std::fs::remove_file(path).expect("remove test database");
+    }
+
+    #[test]
+    fn csv_escapes_commas_newlines_quotes_and_formula_prefixes() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("resume");
+        let generation = state.generation();
+        state.record("Browser, \"Private\"\nTab", 5, generation).expect("quoted sample");
+        state.record("@SUM(A1:A2)", 5, generation).expect("formula sample");
+        let csv = state.csv().expect("csv");
+        assert!(csv.starts_with("day,app,seconds\n"));
+        assert!(csv.contains("\"Browser, \"\"Private\"\"\nTab\",5"));
+        assert!(csv.contains("\"'@SUM(A1:A2)\",5"));
+    }
+
 }
