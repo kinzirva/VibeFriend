@@ -56,3 +56,10 @@ footer { display: flex; justify-content: space-between; gap: 20px; color: #67789
   h1 { letter-spacing: -1.6px; }
   .panelHead { align-items: flex-end; }
 }
+
+.periodTabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+.periodTabs button { font-size: 12px; padding: 7px 11px; }
+.table > p { padding: 14px 4px; }
+@media (max-width: 780px) {
+  .actions { flex-wrap: wrap; justify-content: flex-end; }
+}
