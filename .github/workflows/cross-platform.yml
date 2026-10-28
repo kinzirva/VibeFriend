@@ -1,0 +1,83 @@
+name: Cross-platform desktop
+
+on:
+  push:
+    branches: [main, feat/cross-platform-v0.2]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows NSIS
+            os: windows-2025
+            bundle: nsis
+            artifact: VibeFriend-Windows
+            path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          - name: macOS DMG
+            os: macos-15
+            bundle: dmg
+            artifact: VibeFriend-macOS
+            path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JavaScript dependencies
+        run: npm install
+
+      - name: Typecheck and build shared web UI
+        run: |
+          npm run typecheck
+          npm run build:web
+
+      - name: Generate application icons
+        run: npm run icon --workspace @vibefriend/desktop
+
+      - name: Rust unit tests
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
+
+      - name: Build desktop installer
+        run: npm run tauri --workspace @vibefriend/desktop -- build --bundles ${{ matrix.bundle }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+
+  prerelease:
+    name: Publish verified CI installers
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VibeFriend-*
+          path: release
+          merge-multiple: true
+      - name: Inspect release files
+        run: find release -maxdepth 2 -type f -print -exec sha256sum {} \;
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.2.0-alpha.${{ github.run_number }}
+        run: |
+          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS artifacts passed CI build and unit tests. Public signed distribution is a later milestone."
