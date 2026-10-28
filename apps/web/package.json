@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test:csv": "node --test tests/csv.test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ui": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -20,6 +21,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "@playwright/test": "1.56.1"
   }
 }
