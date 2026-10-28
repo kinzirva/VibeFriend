@@ -159,10 +159,16 @@ export default function App() {
   };
 
   const exportCsv = async () => {
+    const desktop = isDesktop();
+    // An export started before Delete/Pause must not download stale private
+    // data after the user changes consent or clears the SQLite database.
+    const revision = refreshRevision.current;
+    if (desktop && desktopMutationPending.current) return;
     try {
-      const csv = isDesktop()
+      const csv = desktop
         ? await invokeDesktop<string>("export_csv")
         : ["day,app,seconds", ...rows.map((row) => `${row.day},${csvApp(row.app)},${row.seconds}`)].join("\n") + "\n";
+      if (desktop && (revision !== refreshRevision.current || desktopMutationPending.current)) return;
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
