@@ -87,7 +87,7 @@ export default function App() {
     if (isDesktop()) {
       csv = await invokeDesktop<string>("export_csv");
     } else {
-      csv = ["day,app,seconds", ...rows.map((row) => `${row.day},"${row.app.replaceAll('"', '""')}",${row.seconds}`)].join("\n");
+      csv = ["day,app,seconds", ...rows.map((row) => `${row.day},"${row.app.replace(/\"/g, '\"\"')}",${row.seconds}`)].join("\n");
     }
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
