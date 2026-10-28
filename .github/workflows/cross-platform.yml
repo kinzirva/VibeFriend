@@ -2,7 +2,7 @@ name: Cross-platform desktop
 
 on:
   push:
-    branches: [main, feat/cross-platform-v0.2]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -45,6 +45,13 @@ jobs:
           npm run typecheck
           npm run build:web
 
+      - name: Verify web output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s apps/web/dist/index.html
+          test -d apps/web/dist/assets
+
       - name: Generate application icons
         run: npm run icon --workspace @vibefriend/desktop
 
@@ -54,6 +61,15 @@ jobs:
 
       - name: Build desktop installer
         run: npm run tauri --workspace @vibefriend/desktop -- build --bundles ${{ matrix.bundle }}
+
+      - name: Verify installer exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(${{ matrix.path }})
+          test "${#files[@]}" -eq 1
+          test -s "${files[0]}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -68,16 +84,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: VibeFriend-*
           path: release
           merge-multiple: true
-      - name: Inspect release files
-        run: find release -maxdepth 2 -type f -print -exec sha256sum {} \;
+
+      - name: Verify release payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(find release -maxdepth 2 -type f -name '*.exe' -print -quit)"
+          dmg="$(find release -maxdepth 2 -type f -name '*.dmg' -print -quit)"
+          test -n "$exe"
+          test -n "$dmg"
+          test "$(stat -c%s "$exe")" -gt 1000000
+          test "$(stat -c%s "$dmg")" -gt 1000000
+          python3 - "$exe" "$dmg" <<'PY'
+          from pathlib import Path
+          import sys
+
+          exe = Path(sys.argv[1])
+          dmg = Path(sys.argv[2])
+          assert exe.read_bytes()[:2] == b"MZ", "Windows installer is not a PE executable"
+          trailer = dmg.read_bytes()[-512:]
+          assert b"koly" in trailer, "macOS DMG is missing the UDIF trailer"
+          print(f"verified {exe.name}: {exe.stat().st_size} bytes")
+          print(f"verified {dmg.name}: {dmg.stat().st_size} bytes")
+          PY
+          sha256sum "$exe" "$dmg" | tee release/SHA256SUMS.txt
+
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.2.0-alpha.${{ github.run_number }}
         run: |
-          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS artifacts passed CI build and unit tests. Public signed distribution is a later milestone."
+          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
