@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { csvApp, parseCsv, type ActivityRow } from "./csv";
 
 type ActivityEvent = {
@@ -28,6 +28,11 @@ function formatDuration(totalSeconds: number) {
   return `${hours}h ${minutes}m`;
 }
 
+function formatCountdown(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export default function App() {
   const [rows, setRows] = useState<ActivityRow[]>(() => {
     if (isDesktop()) return [];
@@ -41,6 +46,44 @@ export default function App() {
   const [period, setPeriod] = useState<"today" | "week" | "all">("today");
   const [mode, setMode] = useState<"desktop" | "web">(isDesktop() ? "desktop" : "web");
   const [status, setStatus] = useState("Tracking is off until you explicitly start it. Data stays local.");
+  const [focusMinutes, setFocusMinutes] = useState<25 | 50>(25);
+  const [focusSeconds, setFocusSeconds] = useState(25 * 60);
+  const [focusStatus, setFocusStatus] = useState<"idle" | "running" | "paused" | "complete">("idle");
+  const focusDeadline = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (focusStatus !== "running") return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil(((focusDeadline.current ?? performance.now()) - performance.now()) / 1000));
+      setFocusSeconds(remaining);
+      if (remaining === 0) setFocusStatus("complete");
+    };
+    tick();
+    const timer = window.setInterval(tick, 500);
+    return () => window.clearInterval(timer);
+  }, [focusStatus]);
+
+  const startFocus = () => {
+    const remaining = focusStatus === "complete" ? focusMinutes * 60 : focusSeconds;
+    setFocusSeconds(remaining);
+    focusDeadline.current = performance.now() + remaining * 1000;
+    setFocusStatus("running");
+  };
+
+  const pauseFocus = () => {
+    if (focusStatus !== "running") return;
+    setFocusSeconds(Math.max(0, Math.ceil(((focusDeadline.current ?? performance.now()) - performance.now()) / 1000)));
+    focusDeadline.current = null;
+    setFocusStatus("paused");
+  };
+
+  const resetFocus = (minutes: 25 | 50 = focusMinutes) => {
+    focusDeadline.current = null;
+    setFocusMinutes(minutes);
+    setFocusSeconds(minutes * 60);
+    setFocusStatus("idle");
+  };
+
 
   const refresh = async () => {
     if (!isDesktop()) return;
@@ -168,6 +211,37 @@ export default function App() {
         <article><span>{period === "today" ? "Tracked today" : period === "week" ? "Tracked this week" : "Tracked total"}</span><strong>{formatDuration(totalSeconds)}</strong><small>{isDesktop() ? "Local SQLite data" : "Imported CSV data"}</small></article>
         <article><span>Active apps</span><strong>{totals.length}</strong><small>No screenshots</small></article>
         <article><span>Top activity</span><strong>{totals[0]?.[0] ?? "—"}</strong><small>{formatDuration(totals[0]?.[1] ?? 0)}</small></article>
+      </section>
+
+      <section className="panel focus">
+        <div className="panelHead">
+          <div>
+            <span className="eyebrow">FOCUS SESSION</span>
+            <h2>A little uninterrupted time.</h2>
+            <p>Optional local countdown. No app blocking, monitoring or new data collection.</p>
+          </div>
+          <strong className="focusClock" role="timer" aria-label="Time remaining">{formatCountdown(focusSeconds)}</strong>
+        </div>
+        <div className="focusControls">
+          <div className="periodTabs" aria-label="Focus duration">
+            {([25, 50] as const).map((minutes) => (
+              <button key={minutes} className={focusMinutes === minutes ? "primary" : "secondary"}
+                disabled={focusStatus === "running"} onClick={() => resetFocus(minutes)}>{minutes} min</button>
+            ))}
+          </div>
+          <div className="focusActions">
+            {focusStatus === "running"
+              ? <button className="primary" onClick={pauseFocus}>Pause focus</button>
+              : <button className="primary" onClick={startFocus}>{focusStatus === "paused" ? "Resume focus" : "Start focus"}</button>}
+            <button className="secondary" onClick={() => resetFocus()}>Reset</button>
+          </div>
+        </div>
+        <small className="focusNote">
+          {focusStatus === "complete" ? "Session complete. Start another whenever you like."
+            : focusStatus === "paused" ? "Paused. Your remaining time is kept in this open tab."
+            : focusStatus === "running" ? "Counting down locally. This does not change activity-tracking consent."
+            : "Choose a duration and start when ready. Closing this page ends the timer."}
+        </small>
       </section>
 
       <section className="grid">
