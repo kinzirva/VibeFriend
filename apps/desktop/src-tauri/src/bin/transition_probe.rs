@@ -88,8 +88,35 @@ fn activate_second_app() {
         .status()
         .expect("request Calculator process foreground");
     if !result.success() {
-        eprintln!("System Events foreground request unavailable; verifying actual foreground");
+        eprintln!("System Events foreground request unavailable; trying NSRunningApplication");
     }
+
+    // macOS may accept AppleScript activation while keeping TextEdit frontmost
+    // (observed on the hosted macOS 15 VM). Ask AppKit to activate the real
+    // Calculator process directly. Never fake the foreground detector result.
+    use objc::rc::autoreleasepool;
+    use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
+    autoreleasepool(|| unsafe {
+        let bundle_id: *mut Object = msg_send![
+            class!(NSString),
+            stringWithUTF8String: c"com.apple.calculator".as_ptr()
+        ];
+        let running: *mut Object = msg_send![
+            class!(NSRunningApplication),
+            runningApplicationsWithBundleIdentifier: bundle_id
+        ];
+        if !running.is_null() {
+            let count: usize = msg_send![running, count];
+            if count > 0 {
+                let app: *mut Object = msg_send![running, objectAtIndex: 0usize];
+                let activated: i8 = msg_send![app, activateWithOptions: 2usize];
+                println!("NSRunningApplication Calculator activation returned {}", activated != 0);
+            } else {
+                eprintln!("Calculator is not yet visible in NSRunningApplication");
+            }
+        }
+    });
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
