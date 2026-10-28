@@ -22,3 +22,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.7"
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+# The Tauri MockRuntime test feature currently prevents Windows Server 2025
+# cargo test binaries from starting (STATUS_ENTRYPOINT_NOT_FOUND). Keep it
+# scoped to macOS; Windows still runs all production store/collector tests.
+tauri = { version = "2", features = ["test"] }
