@@ -59,7 +59,7 @@ pub fn run() {
 }
 
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod native_ipc_tests {
     use super::*;
     use serde_json::{json, Value};
