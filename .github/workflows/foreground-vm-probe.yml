@@ -5,6 +5,7 @@ on:
     paths:
       - apps/desktop/src-tauri/src/collector.rs
       - apps/desktop/src-tauri/src/bin/foreground_probe.rs
+      - apps/desktop/src-tauri/src/bin/sampling_probe.rs
       - .github/workflows/foreground-vm-probe.yml
   workflow_dispatch:
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - apps/desktop/src-tauri/src/collector.rs
       - apps/desktop/src-tauri/src/bin/foreground_probe.rs
+      - apps/desktop/src-tauri/src/bin/sampling_probe.rs
       - .github/workflows/foreground-vm-probe.yml
 
 permissions:
@@ -33,6 +35,9 @@ jobs:
           npm install
           npm run icon --workspace @vibefriend/desktop
           npm run build:web
+      - name: Compile VM diagnostic binaries before foreground activation
+        working-directory: apps/desktop/src-tauri
+        run: cargo build --bin foreground_probe --bin sampling_probe
       - name: Launch and foreground Notepad
         shell: pwsh
         run: |
@@ -43,10 +48,16 @@ jobs:
           if ($proc.HasExited) { throw "Notepad exited unexpectedly" }
           $activated = (New-Object -ComObject WScript.Shell).AppActivate($proc.Id)
           if (-not $activated) { throw "Unable to foreground Notepad: VM may lack an interactive desktop" }
+          # Generate a harmless F15 input event so the OS idle gate is active.
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.SendKeys]::SendWait('{F15}')
           Start-Sleep -Seconds 2
       - name: Verify production Windows foreground detector
         working-directory: apps/desktop/src-tauri
         run: cargo run --bin foreground_probe -- notepad
+      - name: Verify real Windows collector samples, pauses and SQLite lifecycle
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin sampling_probe -- notepad
 
   macos-foreground:
     name: macOS foreground fixture (TextEdit)
@@ -63,6 +74,9 @@ jobs:
           npm install
           npm run icon --workspace @vibefriend/desktop
           npm run build:web
+      - name: Compile VM diagnostic binaries before foreground activation
+        working-directory: apps/desktop/src-tauri
+        run: cargo build --bin foreground_probe --bin sampling_probe
       - name: Launch and foreground TextEdit
         run: |
           set -euo pipefail
@@ -70,6 +84,11 @@ jobs:
           sleep 3
           # Activation is best effort: the foreground probe itself must pass.
           osascript -e 'tell application "TextEdit" to activate' || true
+          # F15 is a harmless synthetic input for the production idle gate.
+          osascript -e 'tell application "System Events" to key code 113' || true
       - name: Verify production macOS NSWorkspace detector
         working-directory: apps/desktop/src-tauri
         run: cargo run --bin foreground_probe -- TextEdit
+      - name: Verify real macOS collector samples, pauses and SQLite lifecycle
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin sampling_probe -- TextEdit
