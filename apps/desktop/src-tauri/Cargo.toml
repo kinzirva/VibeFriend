@@ -22,3 +22,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.7"
+
+[dev-dependencies]
+# Run actual Rust Tauri command dispatch with MockRuntime (no GUI/webview).
+tauri = { version = "2", features = ["test"] }
