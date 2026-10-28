@@ -11,6 +11,8 @@ VibeFriend is inspired by [Weft](https://github.com/tiann/weft), but the cross-p
 - Local SQLite storage
 - Opt-in start/pause tracking (off by default each time the desktop app starts)
 - Today, current-week and all-time app usage summaries
+- Recent timestamped activity samples in local SQLite (new recordings only)
+- Delete all local desktop activity records and pause collection
 - CSV export on desktop; CSV import/export in the browser dashboard
 - No screenshots, keystrokes or mandatory cloud account
 - Chrome/Edge site tracking planned after the P0 desktop + web release
@@ -57,7 +59,7 @@ Preview installers are **unsigned** until Developer ID / Windows code-signing cr
 
 Desktop tracking starts **disabled** and only collects after the user presses Resume. Activity is stored in the local SQLite database, not uploaded to a VibeFriend server. The app does not capture screenshots, keystrokes, document contents, window titles or browser URLs. The browser dashboard cannot access OS-level activity; it displays only CSV data the user imports and stores that import in the current browser's local storage until cleared. Desktop CSV import is not supported yet.
 
-Foreground app sampling is an approximation of elapsed time, not proof of active keyboard/mouse use. A background or idle session may be counted if an application stays foreground. This is a known P0 accuracy gap pending OS-specific idle detection, and the current daily records are **aggregates, not a chronological event timeline**. Tracking consent resets to off on each desktop launch.
+Foreground app sampling is an approximation of elapsed time, not proof of active keyboard/mouse use. A background or idle session may be counted if an application stays foreground. This is a known P0 accuracy gap pending OS-specific idle detection. New samples are stored in a chronological SQLite events table; earlier aggregated records are not backfilled as fabricated events. The recent timeline shows the latest 200 samples, while daily totals remain aggregated. Tracking consent resets to off on each desktop launch. The Delete local data action pauses collection and removes both aggregated and timestamped records.
 
 ## Release acceptance
 
