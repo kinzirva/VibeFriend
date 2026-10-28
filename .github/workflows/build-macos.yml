@@ -2,10 +2,9 @@ name: macOS build and release
 on:
   push:
     branches: [main, feat/weft-macos-app]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
-  push:
-    tags: ['v*']
 permissions:
   contents: write
 jobs:
