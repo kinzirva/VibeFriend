@@ -156,6 +156,36 @@ fn foreground_application() -> Option<String> {
     None
 }
 
+// Pure eligibility gate: fail closed on missing OS idle data, on >=60s idle,
+// or after an oversized tick (e.g. laptop sleep or a suspended process).
+fn sample_eligible(tracking: bool, elapsed: Duration, idle: Option<Duration>) -> bool {
+    tracking
+        && elapsed <= Duration::from_secs(SAMPLE_SECONDS * 2)
+        && idle.is_some_and(|duration| duration < Duration::from_secs(IDLE_THRESHOLD_SECONDS))
+}
+
+#[cfg(test)]
+mod sample_gate_tests {
+    use super::*;
+
+    #[test]
+    fn idle_boundary_and_missing_os_signal_fail_closed() {
+        let tick = Duration::from_secs(SAMPLE_SECONDS);
+        assert!(sample_eligible(true, tick, Some(Duration::from_millis(59_999))));
+        assert!(!sample_eligible(true, tick, Some(Duration::from_secs(60))));
+        assert!(!sample_eligible(true, tick, Some(Duration::from_secs(61))));
+        assert!(!sample_eligible(true, tick, None));
+        assert!(!sample_eligible(false, tick, Some(Duration::ZERO)));
+    }
+
+    #[test]
+    fn suspended_or_slept_ticks_cannot_credit_elapsed_time() {
+        assert!(sample_eligible(true, Duration::from_secs(10), Some(Duration::ZERO)));
+        assert!(!sample_eligible(true, Duration::from_secs(11), Some(Duration::ZERO)));
+        assert!(!sample_eligible(true, Duration::from_secs(120), Some(Duration::ZERO)));
+    }
+}
+
 pub fn spawn_collector(state: Arc<AppState>) {
     thread::spawn(move || {
         let mut last_tick = Instant::now();
@@ -172,10 +202,7 @@ pub fn spawn_collector(state: Arc<AppState>) {
                 last_generation = generation;
                 continue;
             }
-            if !state.is_tracking()
-                || elapsed > Duration::from_secs(SAMPLE_SECONDS * 2)
-                || !user_is_active()
-            {
+            if !sample_eligible(state.is_tracking(), elapsed, idle_duration()) {
                 continue;
             }
 
