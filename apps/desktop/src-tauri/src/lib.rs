@@ -17,8 +17,8 @@ fn get_tracking(state: State<'_, Arc<AppState>>) -> bool {
 }
 
 #[tauri::command]
-fn set_tracking(enabled: bool, state: State<'_, Arc<AppState>>) {
-    state.set_tracking(enabled);
+fn set_tracking(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.set_tracking(enabled)
 }
 
 #[tauri::command]

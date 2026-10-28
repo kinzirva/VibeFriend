@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use chrono::{Local, Utc};
@@ -24,6 +24,7 @@ pub struct ActivityEvent {
 pub struct AppState {
     db: Mutex<Connection>,
     tracking: AtomicBool,
+    generation: AtomicU64,
 }
 
 impl AppState {
@@ -53,18 +54,27 @@ impl AppState {
         Ok(Self {
             db: Mutex::new(connection),
             tracking: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         })
     }
 
     pub fn is_tracking(&self) -> bool {
-        self.tracking.load(Ordering::Relaxed)
+        self.tracking.load(Ordering::SeqCst)
     }
 
-    pub fn set_tracking(&self, enabled: bool) {
-        self.tracking.store(enabled, Ordering::Relaxed);
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
     }
 
-    pub fn record(&self, app: &str, seconds: i64) -> Result<(), String> {
+    pub fn set_tracking(&self, enabled: bool) -> Result<(), String> {
+        // Serialize consent changes with SQLite writes.
+        let _db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.tracking.store(enabled, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub fn record(&self, app: &str, seconds: i64, generation: u64) -> Result<(), String> {
         if seconds <= 0 || app.trim().is_empty() {
             return Err("activity requires an application and positive duration".to_string());
         }
@@ -75,7 +85,7 @@ impl AppState {
         let mut db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
         // Recheck while holding the database lock so a paused/cleared collector
         // cannot insert a stale sample after the user has disabled tracking.
-        if !self.is_tracking() {
+        if !self.is_tracking() || self.generation() != generation {
             return Ok(());
         }
         let tx = db.transaction().map_err(|error| error.to_string())?;
@@ -113,8 +123,10 @@ impl AppState {
     }
 
     pub fn clear_data(&self) -> Result<(), String> {
-        self.set_tracking(false);
         let db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
+        // Pause and invalidate all samples atomically with the delete.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.tracking.store(false, Ordering::SeqCst);
         db.execute_batch("DELETE FROM activity_events; DELETE FROM activity;")
             .map_err(|error| error.to_string())
     }
@@ -122,7 +134,7 @@ impl AppState {
     pub fn activity(&self) -> Result<Vec<ActivityRow>, String> {
         let db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
         let mut statement = db
-            .prepare("SELECT day, app, seconds FROM activity ORDER BY day DESC, seconds DESC LIMIT 500")
+            .prepare("SELECT day, app, seconds FROM activity ORDER BY day DESC, seconds DESC")
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map([], |row| {
@@ -162,27 +174,27 @@ mod tests {
     fn collection_requires_explicit_opt_in() {
         let state = AppState::new(PathBuf::from(":memory:")).expect("database");
         assert!(!state.is_tracking());
-        state.set_tracking(true);
+        state.set_tracking(true).expect("enable tracking");
         assert!(state.is_tracking());
-        state.set_tracking(false);
+        state.set_tracking(false).expect("disable tracking");
         assert!(!state.is_tracking());
     }
 
     #[test]
     fn csv_escapes_quotes_and_spreadsheet_formulas() {
         let state = AppState::new(PathBuf::from(":memory:")).expect("database");
-        state.set_tracking(true);
-        state.record("=HYPERLINK(\"x\")", 5).expect("sample");
+        state.set_tracking(true).expect("enable tracking");
+        state.record("=HYPERLINK(\"x\")", 5, state.generation()).expect("sample");
         assert!(state.csv().expect("csv").contains("\"'=HYPERLINK(\"\"x\"\")\""));
-        assert!(state.record("Browser", 0).is_err());
+        assert!(state.record("Browser", 0, state.generation()).is_err());
     }
 
     #[test]
     fn sqlite_round_trip() {
         let state = AppState::new(PathBuf::from(":memory:")).expect("database");
-        state.set_tracking(true);
-        state.record("Browser", 5).expect("first sample");
-        state.record("Browser", 5).expect("second sample");
+        state.set_tracking(true).expect("enable tracking");
+        state.record("Browser", 5, state.generation()).expect("first sample");
+        state.record("Browser", 5, state.generation()).expect("second sample");
         let rows = state.activity().expect("rows");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].app, "Browser");
@@ -194,7 +206,37 @@ mod tests {
         assert!(!state.is_tracking());
         assert!(state.activity().expect("empty daily").is_empty());
         assert!(state.timeline().expect("empty timeline").is_empty());
-        state.record("Browser", 5).expect("stale collector sample ignored");
+        state.record("Browser", 5, state.generation()).expect("stale collector sample ignored");
         assert!(state.timeline().expect("still empty").is_empty());
     }
+    #[test]
+    fn stale_samples_cannot_cross_pause_resume_or_clear() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("start");
+        let old_generation = state.generation();
+        state.set_tracking(false).expect("pause");
+        state.set_tracking(true).expect("resume");
+        state.record("Old app", 5, old_generation).expect("ignore stale");
+        assert!(state.timeline().expect("timeline").is_empty());
+
+        state.record("Current app", 5, state.generation()).expect("current");
+        assert_eq!(state.timeline().expect("timeline").len(), 1);
+        let before_clear = state.generation();
+        state.clear_data().expect("clear");
+        state.set_tracking(true).expect("resume after clear");
+        state.record("Old app", 5, before_clear).expect("ignore pre-clear");
+        assert!(state.timeline().expect("timeline").is_empty());
+    }
+
+    #[test]
+    fn csv_export_is_not_truncated_to_500_activity_rows() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("start");
+        for index in 0..505 {
+            state.record(&format!("App-{index}"), 5, state.generation()).expect("sample");
+        }
+        assert_eq!(state.activity().expect("all rows").len(), 505);
+        assert_eq!(state.csv().expect("csv").lines().count(), 506);
+    }
+
 }
