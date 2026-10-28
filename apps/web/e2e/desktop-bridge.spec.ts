@@ -157,7 +157,7 @@ test("late desktop CSV export cannot download private rows after deletion", asyn
             case "export_csv": {
               // Simulate a backend response prepared before deletion, but
               // delivered only after clear_data has finished.
-              const staleCsv = 'day,app,seconds\\n2026-10-28,"Private editor",5\\n';
+              const staleCsv = 'day,app,seconds\n2026-10-28,"Private editor",5\n';
               return new Promise((resolve) => {
                 state.resolveExport = () => resolve(staleCsv);
               });
