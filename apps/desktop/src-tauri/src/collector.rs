@@ -117,7 +117,7 @@ fn session_is_unlocked() -> bool {
         // The screen-locked key is absent when unlocked, but present/true
         // while locked. Also require the current session to own the console.
         let console_key: *mut Object =
-            msg_send![class!(NSString), stringWithUTF8String: c"kCGSessionOnConsoleKey".as_ptr()];
+            // The public constant kCGSessionOnConsoleKey has the dictionary\n            // string value "kCGSSessionOnConsoleKey" (note the extra S).\n            msg_send![class!(NSString), stringWithUTF8String: c"kCGSSessionOnConsoleKey".as_ptr()];
         let locked_key: *mut Object =
             msg_send![class!(NSString), stringWithUTF8String: c"CGSSessionScreenIsLocked".as_ptr()];
         let console_value: *mut Object = msg_send![session, objectForKey: console_key];
