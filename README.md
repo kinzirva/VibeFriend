@@ -53,7 +53,7 @@ GitHub Actions builds:
 - GitHub Pages deployment from `main` (requires Pages to be enabled with **GitHub Actions** as its source in repository Settings → Pages)
 - Automated prerelease installers after verified CI builds on `main`
 - `SHA256SUMS.txt` published with every cross-platform prerelease after EXE/DMG payload sanity checks
-- CI-runner installer smoke: Windows silent NSIS install and 8-second launch; macOS DMG mount, bundle metadata and 8-second launch
+- Separate `Release VM smoke` workflow downloads published installers, verifies their SHA256, silently installs/launches Windows NSIS and mounts/launches macOS DMG on hosted runners
 - Post-publication verification downloads EXE, DMG and `SHA256SUMS.txt` back from GitHub Release and checks the published hashes
 
 Preview installers are **unsigned** until Developer ID / Windows code-signing credentials are configured. CI success is not the same as real-device install verification.
