@@ -1,0 +1,12 @@
+{
+  "name": "vibefriend",
+  "private": true,
+  "version": "0.2.0",
+  "workspaces": ["apps/web", "apps/desktop"],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @vibefriend/web",
+    "build:web": "npm run build --workspace @vibefriend/web",
+    "typecheck": "npm run typecheck --workspace @vibefriend/web",
+    "desktop": "npm run tauri --workspace @vibefriend/desktop"
+  }
+}
