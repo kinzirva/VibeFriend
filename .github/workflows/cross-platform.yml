@@ -129,3 +129,21 @@ jobs:
           TAG: v0.2.0-alpha.${{ github.run_number }}
         run: |
           gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
+
+      - name: Verify published prerelease by downloading GitHub assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.2.0-alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          verify_dir="$(mktemp -d)"
+          gh release download "$TAG" --dir "$verify_dir" \
+            --pattern '*.exe' --pattern '*.dmg' --pattern 'SHA256SUMS.txt'
+          test "$(find "$verify_dir" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')" -eq 1
+          test "$(find "$verify_dir" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')" -eq 1
+          test -s "$verify_dir/SHA256SUMS.txt"
+          diff -u release/SHA256SUMS.txt "$verify_dir/SHA256SUMS.txt"
+          (cd "$verify_dir" && sha256sum --check SHA256SUMS.txt)
+          echo "GitHub Release $TAG: downloaded EXE, DMG and manifest; hashes verified"
+
