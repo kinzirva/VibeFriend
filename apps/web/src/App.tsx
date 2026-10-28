@@ -1,10 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-
-type ActivityRow = {
-  day: string;
-  app: string;
-  seconds: number;
-};
+import { csvApp, parseCsv, type ActivityRow } from "./csv";
 
 type ActivityEvent = {
   started_at: string;
@@ -19,11 +14,6 @@ function localDay(date: Date) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
 }
 
-function csvApp(value: string) {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
-
 const isDesktop = () => "__TAURI_INTERNALS__" in window;
 
 async function invokeDesktop<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -36,44 +26,6 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours === 0) return `${minutes}m`;
   return `${hours}h ${minutes}m`;
-}
-
-function parseCsv(text: string): ActivityRow[] {
-  const records: string[][] = [];
-  let record: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"') {
-      if (quoted && text[i + 1] === '"') { field += '"'; i++; }
-      else if (quoted) quoted = false;
-      else if (field === "") quoted = true;
-      else throw new Error("Invalid CSV quotation.");
-    } else if (char === "," && !quoted) {
-      record.push(field); field = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && text[i + 1] === "\n") i++;
-      record.push(field);
-      if (record.some((value) => value !== "")) records.push(record);
-      record = []; field = "";
-    } else {
-      field += char;
-    }
-  }
-  if (quoted) throw new Error("Unclosed CSV quotation.");
-  if (field || record.length) { record.push(field); records.push(record); }
-  const header = records.shift()?.map((value) => value.trim().toLowerCase());
-  if (header?.join(",") !== "day,app,seconds") throw new Error("CSV columns must be day,app,seconds.");
-  if (records.length > 100000) throw new Error("CSV contains too many records.");
-  return records.map(([day, app, rawSeconds], index) => {
-    const seconds = Number(rawSeconds);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? "") || !app?.trim() ||
-        !Number.isFinite(seconds) || seconds <= 0 || seconds > 86400) {
-      throw new Error(`Invalid activity at CSV row ${index + 2}.`);
-    }
-    return { day, app, seconds };
-  });
 }
 
 export default function App() {
