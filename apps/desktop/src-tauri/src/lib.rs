@@ -12,6 +12,11 @@ fn get_activity(state: State<'_, Arc<AppState>>) -> Result<Vec<ActivityRow>, Str
 }
 
 #[tauri::command]
+fn get_tracking(state: State<'_, Arc<AppState>>) -> bool {
+    state.is_tracking()
+}
+
+#[tauri::command]
 fn set_tracking(enabled: bool, state: State<'_, Arc<AppState>>) {
     state.set_tracking(enabled);
 }
@@ -38,7 +43,7 @@ pub fn run() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_activity, set_tracking, export_csv])
+        .invoke_handler(tauri::generate_handler![get_activity, get_tracking, set_tracking, export_csv])
         .run(tauri::generate_context!())
         .expect("error while running VibeFriend");
 }
