@@ -6,6 +6,13 @@ type ActivityRow = {
   seconds: number;
 };
 
+type ActivityEvent = {
+  started_at: string;
+  ended_at: string;
+  app: string;
+  seconds: number;
+};
+
 const storageKey = "vibefriend-web-import-v1";
 
 function localDay(date: Date) {
@@ -77,6 +84,7 @@ export default function App() {
       return saved ? parseCsv(saved) : [];
     } catch { return []; }
   });
+  const [timeline, setTimeline] = useState<ActivityEvent[]>([]);
   const [tracking, setTracking] = useState(false);
   const [period, setPeriod] = useState<"today" | "week" | "all">("today");
   const [mode, setMode] = useState<"desktop" | "web">(isDesktop() ? "desktop" : "web");
@@ -85,14 +93,16 @@ export default function App() {
   const refresh = async () => {
     if (!isDesktop()) return;
     try {
-      const [latest, enabled] = await Promise.all([
+      const [latest, enabled, events] = await Promise.all([
         invokeDesktop<ActivityRow[]>("get_activity"),
-        invokeDesktop<boolean>("get_tracking")
+        invokeDesktop<boolean>("get_tracking"),
+        invokeDesktop<ActivityEvent[]>("get_timeline")
       ]);
       setRows(latest);
+      setTimeline(events);
       setTracking(enabled);
       setMode("desktop");
-      setStatus("Live desktop data from the local SQLite database.");
+      setStatus(enabled ? "Tracking enabled. Activity is stored in local SQLite." : "Tracking paused. Local SQLite data is retained until deleted.");
     } catch (error) {
       setStatus(`Desktop bridge unavailable: ${String(error)}`);
     }
@@ -173,9 +183,22 @@ export default function App() {
 
   const clearWebData = () => {
     if (isDesktop()) return;
-    localStorage.removeItem(storageKey);
+    try { localStorage.removeItem(storageKey); } catch { /* Browser storage may be disabled. */ }
     setRows([]);
     setStatus("Imported browser data cleared.");
+  };
+
+  const clearDesktopData = async () => {
+    if (!isDesktop() || !window.confirm("Permanently delete all local activity records and pause tracking?")) return;
+    try {
+      await invokeDesktop("clear_data");
+      setRows([]);
+      setTimeline([]);
+      setTracking(false);
+      setStatus("All local desktop activity records deleted. Tracking paused.");
+    } catch (error) {
+      setStatus(`Could not delete local records: ${String(error)}`);
+    }
   };
 
   return (
@@ -241,6 +264,7 @@ export default function App() {
           <div className="actions">
             {!isDesktop() && <label className="secondary fileButton">Import CSV<input type="file" accept=".csv,text/csv" onChange={(event) => void importCsv(event)} /></label>}
             {!isDesktop() && <button className="secondary" onClick={clearWebData}>Clear data</button>}
+            {isDesktop() && <button className="secondary" onClick={() => void clearDesktopData()}>Delete local data</button>}
             <button className="primary" onClick={() => void exportCsv()}>Export CSV</button>
           </div>
         </div>
@@ -254,6 +278,24 @@ export default function App() {
           {filteredRows.length === 0 && <p>No records for this period.</p>}
         </div>
       </section>
+
+      {isDesktop() && <section className="panel timeline">
+        <div className="panelHead">
+          <div><span className="eyebrow">LOCAL SQLITE</span><h2>Recent activity timeline</h2></div>
+        </div>
+        <p>Approximate 5-second foreground samples. Historical daily totals recorded before this feature cannot be reconstructed as events.</p>
+        <div className="table">
+          <div className="tableRow tableHead"><span>Started</span><span>Application</span><span>Duration</span></div>
+          {timeline.slice(0, 20).map((event, index) => (
+            <div className="tableRow" key={`${event.started_at}-${event.app}-${index}`}>
+              <span>{new Date(event.started_at).toLocaleString()}</span>
+              <span>{event.app}</span>
+              <span>{event.seconds}s</span>
+            </div>
+          ))}
+          {timeline.length === 0 && <p>No activity samples yet. Press Resume to start tracking.</p>}
+        </div>
+      </section>}
 
       <footer>
         <span>{status}</span>
