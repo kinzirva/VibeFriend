@@ -314,12 +314,12 @@ mod tests {
         let state = AppState::new(PathBuf::from(":memory:")).expect("database");
         state.set_tracking(true).expect("resume");
         let generation = state.generation();
-        state.record("Browser, \"Private\"\\nTab", 5, generation).expect("quoted sample");
+        state.record("Browser, \"Private\"\nTab", 5, generation).expect("quoted sample");
         state.record("@SUM(A1:A2)", 5, generation).expect("formula sample");
         let csv = state.csv().expect("csv");
-        assert!(csv.starts_with("day,app,seconds\\n"));
-        assert!(csv.contains("\\"Browser, \"\"Private\"\"\\nTab\\",5"));
-        assert!(csv.contains("\\"'@SUM(A1:A2)\\",5"));
+        assert!(csv.starts_with("day,app,seconds\n"));
+        assert!(csv.contains("\"Browser, \"\"Private\"\"\nTab\",5"));
+        assert!(csv.contains("\"'@SUM(A1:A2)\",5"));
     }
 
 }
