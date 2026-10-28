@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
+    "test:csv": "node --test tests/csv.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
