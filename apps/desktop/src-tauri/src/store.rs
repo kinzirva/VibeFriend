@@ -137,7 +137,7 @@ impl AppState {
         let db = self.db.lock().map_err(|_| "database lock poisoned".to_string())?;
         let mut statement = db
             .prepare("SELECT started_at, ended_at, app, seconds
-                      FROM activity_events ORDER BY id DESC LIMIT 200")
+                      FROM activity_events ORDER BY ended_at DESC, id DESC LIMIT 200")
             .map_err(|error| error.to_string())?;
         let rows = statement.query_map([], |row| {
             Ok(ActivityEvent {
@@ -386,6 +386,34 @@ mod tests {
             .expect("stale sample ignored");
         assert!(state.activity().expect("daily rows").is_empty());
         assert!(state.timeline().expect("events").is_empty());
+    }
+
+    #[test]
+    fn timeline_orders_by_actual_event_time_even_if_clock_moves_backwards() {
+        use chrono::TimeZone;
+
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("enable tracking");
+        let generation = state.generation();
+        let reference = Utc.with_ymd_and_hms(2026, 10, 28, 12, 0, 0)
+            .single().expect("reference UTC time");
+
+        // A system clock adjustment can cause a later INSERT to have an
+        // earlier timestamp. The UI must show actual event chronology.
+        state.record_at("Recent", 5, generation, reference + Duration::seconds(20))
+            .expect("newer sample");
+        state.record_at("Older", 5, generation, reference)
+            .expect("clock moved backwards");
+        state.record_at("SameTimeLaterInsert", 5, generation, reference + Duration::seconds(20))
+            .expect("same-time sample");
+
+        let timeline = state.timeline().expect("timeline");
+        assert_eq!(
+            timeline.iter().map(|event| event.app.as_str()).collect::<Vec<_>>(),
+            vec!["SameTimeLaterInsert", "Recent", "Older"]
+        );
+        assert!(timeline[0].ended_at >= timeline[1].ended_at);
+        assert!(timeline[1].ended_at >= timeline[2].ended_at);
     }
 
 }
