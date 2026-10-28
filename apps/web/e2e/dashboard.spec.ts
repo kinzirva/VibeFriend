@@ -96,3 +96,24 @@ test("today/week/all reports respect Monday boundary and exclude future days", a
   await page.getByRole("button", { name: "All time" }).click();
   await expect(activeApps).toHaveText("4");
 });
+
+test("focus countdown start, pause, resume and reset never enables tracking", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-10-28T12:00:00Z") });
+  await page.goto("/");
+  await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("25:00");
+  await page.getByRole("button", { name: "Start focus" }).click();
+  await expect(page.getByRole("button", { name: "Pause focus" })).toBeVisible();
+  await page.clock.fastForward(10_000);
+  await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("24:50");
+  await page.getByRole("button", { name: "Pause focus" }).click();
+  await expect(page.getByRole("button", { name: "Resume focus" })).toBeVisible();
+  await page.clock.fastForward(10_000);
+  await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("24:50");
+  await page.getByRole("button", { name: "Resume focus" }).click();
+  await expect(page.getByRole("button", { name: "Pause focus" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("25:00");
+  await page.getByRole("button", { name: "50 min" }).click();
+  await expect(page.getByRole("timer", { name: "Time remaining" })).toHaveText("50:00");
+  await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
+});
