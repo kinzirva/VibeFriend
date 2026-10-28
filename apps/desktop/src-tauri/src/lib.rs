@@ -3,7 +3,7 @@ mod store;
 
 use std::sync::Arc;
 
-use store::{ActivityRow, AppState};
+use store::{ActivityEvent, ActivityRow, AppState};
 use tauri::{Manager, State};
 
 #[tauri::command]
@@ -26,6 +26,16 @@ fn export_csv(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     state.csv()
 }
 
+#[tauri::command]
+fn get_timeline(state: State<'_, Arc<AppState>>) -> Result<Vec<ActivityEvent>, String> {
+    state.timeline()
+}
+
+#[tauri::command]
+fn clear_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.clear_data()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -43,7 +53,7 @@ pub fn run() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_activity, get_tracking, set_tracking, export_csv])
+        .invoke_handler(tauri::generate_handler![get_activity, get_tracking, set_tracking, export_csv, get_timeline, clear_data])
         .run(tauri::generate_context!())
         .expect("error while running VibeFriend");
 }
