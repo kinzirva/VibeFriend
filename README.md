@@ -22,7 +22,7 @@ VibeFriend is inspired by [Weft](https://github.com/tiann/weft), but the cross-p
 - `apps/web` — React + TypeScript + Vite dashboard; also deployed as the public web UI.
 - `apps/desktop` — Tauri 2 desktop shell.
 - `apps/desktop/src-tauri` — Rust collector, SQLite store and desktop commands.
-- Legacy Swift prototype remains in the repository while cross-platform replacement is validated.
+- Legacy Swift prototype remains in the repository for reference; its standalone CI has been retired in favor of the Tauri cross-platform pipeline.
 
 ## Development
 
@@ -52,6 +52,7 @@ GitHub Actions builds:
 - Web dashboard artifact
 - GitHub Pages deployment from `main` (requires Pages to be enabled with **GitHub Actions** as its source in repository Settings → Pages)
 - Automated prerelease installers after verified CI builds on `main`
+- `SHA256SUMS.txt` published with every cross-platform prerelease after EXE/DMG payload sanity checks
 
 Preview installers are **unsigned** until Developer ID / Windows code-signing credentials are configured. CI success is not the same as real-device install verification.
 
