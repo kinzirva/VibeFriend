@@ -114,7 +114,9 @@ jobs:
     name: macOS DMG + launch smoke
     needs: resolve-release
     runs-on: macos-15
-    timeout-minutes: 15
+    # Hosted macOS runner provisioning occasionally consumes the original 15m
+    # without executing a single step; retain strict hash/install/launch checks.
+    timeout-minutes: 30
     steps:
       - name: Download published release
         env:
