@@ -136,3 +136,59 @@ test("late desktop poll cannot resurrect data after confirmed deletion", async (
   await expect(page.locator(".metrics article").nth(1).locator("strong")).toHaveText("0");
   await expect(page.locator(".panel.timeline").last().getByText("Private editor")).toHaveCount(0);
 });
+
+
+test("late desktop CSV export cannot download private rows after deletion", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = {
+      tracking: false,
+      rows: [{ day: "2026-10-28", app: "Private editor", seconds: 5 }],
+      events: [],
+      resolveExport: null as null | (() => void),
+    };
+    Object.defineProperty(window, "__VF_TEST_BRIDGE__", { value: state });
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {
+        invoke: async (command: string) => {
+          switch (command) {
+            case "get_activity": return [...state.rows];
+            case "get_tracking": return state.tracking;
+            case "get_timeline": return [...state.events];
+            case "export_csv": {
+              // Simulate a backend response prepared before deletion, but
+              // delivered only after clear_data has finished.
+              const staleCsv = 'day,app,seconds\\n2026-10-28,"Private editor",5\\n';
+              return new Promise((resolve) => {
+                state.resolveExport = () => resolve(staleCsv);
+              });
+            }
+            case "clear_data":
+              state.rows = [];
+              state.events = [];
+              state.tracking = false;
+              return null;
+            default: throw new Error("Unexpected desktop IPC command: " + command);
+          }
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Tracking paused. Local SQLite data is retained until deleted.")).toBeVisible();
+  const downloads: string[] = [];
+  page.on("download", (download) => downloads.push(download.suggestedFilename()));
+  await page.getByRole("button", { name: "Export CSV" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    Boolean(Reflect.get(window, "__VF_TEST_BRIDGE__").resolveExport)
+  )).toBe(true);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete local data" }).click();
+  await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
+
+  await page.evaluate(() => Reflect.get(window, "__VF_TEST_BRIDGE__").resolveExport());
+  await page.waitForTimeout(100);
+  expect(downloads).toEqual([]);
+  await expect(page.locator(".metrics article").nth(1).locator("strong")).toHaveText("0");
+});
