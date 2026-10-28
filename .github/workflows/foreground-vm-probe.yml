@@ -32,6 +32,7 @@ jobs:
         run: |
           npm install
           npm run icon --workspace @vibefriend/desktop
+          npm run build:web
       - name: Launch and foreground Notepad
         shell: pwsh
         run: |
@@ -61,6 +62,7 @@ jobs:
         run: |
           npm install
           npm run icon --workspace @vibefriend/desktop
+          npm run build:web
       - name: Launch and foreground TextEdit
         run: |
           set -euo pipefail
