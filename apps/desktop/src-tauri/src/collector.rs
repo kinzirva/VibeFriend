@@ -1,5 +1,3 @@
-#[cfg(target_os = "windows")]
-use std::process::Command;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -89,29 +87,68 @@ fn foreground_application() -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn foreground_application() -> Option<String> {
-    let script = r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class VibeFriendWin32 {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
-}
-"@
-$handle = [VibeFriendWin32]::GetForegroundWindow()
-$processId = 0
-[void][VibeFriendWin32]::GetWindowThreadProcessId($handle, [ref]$processId)
-if ($processId -gt 0) { (Get-Process -Id $processId -ErrorAction SilentlyContinue).ProcessName }
-"#;
-    let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetForegroundWindow() -> *mut c_void;
+        fn GetWindowThreadProcessId(hwnd: *mut c_void, process_id: *mut u32) -> u32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, process_id: u32) -> *mut c_void;
+        fn QueryFullProcessImageNameW(
+            process: *mut c_void,
+            flags: u32,
+            filename: *mut u16,
+            size: *mut u32,
+        ) -> i32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    let window = unsafe { GetForegroundWindow() };
+    if window.is_null() {
         return None;
     }
-    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!name.is_empty()).then_some(name)
+    let mut process_id = 0;
+    unsafe { GetWindowThreadProcessId(window, &mut process_id) };
+    if process_id == 0 {
+        return None;
+    }
+
+    // PROCESS_QUERY_LIMITED_INFORMATION: no elevated permissions or window text.
+    let process = unsafe { OpenProcess(0x1000, 0, process_id) };
+    if process.is_null() {
+        return None;
+    }
+    let mut filename = vec![0u16; 32768];
+    let mut length = filename.len() as u32;
+    let found = unsafe {
+        QueryFullProcessImageNameW(process, 0, filename.as_mut_ptr(), &mut length)
+    };
+    unsafe { CloseHandle(process) };
+    if found == 0 || length == 0 {
+        return None;
+    }
+
+    // Only the executable basename is recorded. Never persist its full path,
+    // window title, browser URL or any document contents.
+    let path = String::from_utf16(&filename[..length as usize]).ok()?;
+    let app = std::path::Path::new(&path)
+        .file_stem()?
+        .to_str()?
+        .trim()
+        .to_string();
+    (!app.is_empty()).then_some(app)
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_foreground_tests {
+    #[test]
+    fn win32_process_name_is_only_executable_basename() {
+        let path = std::path::Path::new(r"C:\Users\Test\Documents\notepad.exe");
+        assert_eq!(path.file_stem().and_then(|s| s.to_str()), Some("notepad"));
+    }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
