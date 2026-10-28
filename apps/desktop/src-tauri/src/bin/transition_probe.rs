@@ -15,8 +15,10 @@ unsafe extern "C" {
 
 fn wait_for_foreground(expected: &str, timeout: Duration) {
     let deadline = Instant::now() + timeout;
+    let mut last_observed = None;
     while Instant::now() < deadline {
-        if foreground_application()
+        last_observed = foreground_application();
+        if last_observed
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(expected))
         {
@@ -24,7 +26,9 @@ fn wait_for_foreground(expected: &str, timeout: Duration) {
         }
         thread::sleep(Duration::from_millis(500));
     }
-    panic!("fixture did not foreground the expected application within the deadline");
+    panic!(
+        "expected foreground application {expected:?}, last observed {last_observed:?} after {timeout:?}"
+    );
 }
 
 fn wait_for_record(state: &store::AppState, expected: &str, timeout: Duration) {
@@ -61,16 +65,31 @@ Add-Type -AssemblyName System.Windows.Forms
 
 #[cfg(target_os = "macos")]
 fn activate_second_app() {
+    // Launch Services activation is more reliable on hosted interactive VMs
+    // than AppleScript alone, especially after the idle fixture has run.
     let result = std::process::Command::new("open")
-        .args(["-a", "Calculator"])
+        .args(["-a", "Calculator", "--activate"])
         .status()
-        .expect("launch Calculator");
+        .expect("launch and activate Calculator");
     assert!(result.success(), "Calculator did not launch");
     let result = std::process::Command::new("osascript")
         .args(["-e", "tell application \"Calculator\" to activate"])
         .status()
         .expect("activate Calculator");
     assert!(result.success(), "Calculator did not activate");
+    // A hosted GUI may accept the AppleScript activate command without
+    // transferring foreground focus. Try an explicit process activation,
+    // but keep the real NSWorkspace foreground assertion mandatory.
+    let result = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to set frontmost of process \"Calculator\" to true",
+        ])
+        .status()
+        .expect("request Calculator process foreground");
+    if !result.success() {
+        eprintln!("System Events foreground request unavailable; verifying actual foreground");
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
