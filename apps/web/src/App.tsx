@@ -50,6 +50,10 @@ export default function App() {
   const [focusSeconds, setFocusSeconds] = useState(25 * 60);
   const [focusStatus, setFocusStatus] = useState<"idle" | "running" | "paused" | "complete">("idle");
   const focusDeadline = useRef<number | null>(null);
+  // Discard in-flight polling results when a privacy-sensitive mutation begins.
+  const refreshRevision = useRef(0);
+  const refreshRequest = useRef(0);
+  const desktopMutationPending = useRef(false);
 
   useEffect(() => {
     if (focusStatus !== "running") return;
@@ -86,19 +90,23 @@ export default function App() {
 
 
   const refresh = async () => {
-    if (!isDesktop()) return;
+    if (!isDesktop() || desktopMutationPending.current) return;
+    const revision = refreshRevision.current;
+    const request = ++refreshRequest.current;
     try {
       const [latest, enabled, events] = await Promise.all([
         invokeDesktop<ActivityRow[]>("get_activity"),
         invokeDesktop<boolean>("get_tracking"),
         invokeDesktop<ActivityEvent[]>("get_timeline")
       ]);
+      if (revision !== refreshRevision.current || request !== refreshRequest.current || desktopMutationPending.current) return;
       setRows(latest);
       setTimeline(events);
       setTracking(enabled);
       setMode("desktop");
       setStatus(enabled ? "Tracking enabled. Activity is stored in local SQLite." : "Tracking paused. Local SQLite data is retained until deleted.");
     } catch (error) {
+      if (revision !== refreshRevision.current || request !== refreshRequest.current || desktopMutationPending.current) return;
       setStatus(`Desktop bridge unavailable: ${String(error)}`);
     }
   };
@@ -128,7 +136,9 @@ export default function App() {
   const topSeconds = Math.max(1, totals[0]?.[1] ?? 1);
 
   const toggleTracking = async () => {
-    if (!isDesktop()) return;
+    if (!isDesktop() || desktopMutationPending.current) return;
+    desktopMutationPending.current = true;
+    refreshRevision.current++;
     const next = !tracking;
     try {
       await invokeDesktop("set_tracking", { enabled: next });
@@ -136,6 +146,9 @@ export default function App() {
       setStatus(next ? "Tracking enabled by you." : "Tracking paused.");
     } catch (error) {
       setStatus(`Unable to change tracking: ${String(error)}`);
+    } finally {
+      desktopMutationPending.current = false;
+      refreshRevision.current++;
     }
   };
 
@@ -184,7 +197,9 @@ export default function App() {
   };
 
   const clearDesktopData = async () => {
-    if (!isDesktop() || !window.confirm("Permanently delete all local activity records and pause tracking?")) return;
+    if (!isDesktop() || desktopMutationPending.current || !window.confirm("Permanently delete all local activity records and pause tracking?")) return;
+    desktopMutationPending.current = true;
+    refreshRevision.current++;
     try {
       await invokeDesktop("clear_data");
       setRows([]);
@@ -193,6 +208,9 @@ export default function App() {
       setStatus("All local desktop activity records deleted. Tracking paused.");
     } catch (error) {
       setStatus(`Could not delete local records: ${String(error)}`);
+    } finally {
+      desktopMutationPending.current = false;
+      refreshRevision.current++;
     }
   };
 
