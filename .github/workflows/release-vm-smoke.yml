@@ -3,6 +3,12 @@ name: Release VM smoke
 on:
   release:
     types: [published]
+  # Releases created with GITHUB_TOKEN do not emit a new release workflow event.
+  # The publishing workflow itself DOES emit workflow_run on completion.
+  workflow_run:
+    workflows: [Cross-platform desktop]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
   push:
     branches: [main]
@@ -14,6 +20,7 @@ permissions:
 
 jobs:
   resolve-release:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -23,16 +30,31 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
+          PUBLISH_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
         run: |
           set -euo pipefail
           if [ -n "${EVENT_TAG:-}" ]; then
             tag="$EVENT_TAG"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            # The tag is derived from the EXACT completed build, never 'latest'.
+            tag="v0.2.0-alpha.${PUBLISH_RUN_NUMBER}"
           else
             tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           test -n "$tag"
+          # Be tolerant of API propagation after the publishing workflow finishes.
+          for attempt in $(seq 1 12); do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "::error::Published release $tag not found after retries"
+              exit 1
+            fi
+            sleep 10
+          done
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Testing release: $tag"
+          echo "Testing published release: $tag"
 
   windows-smoke:
     name: Windows installer + launch smoke
