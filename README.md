@@ -53,6 +53,8 @@ GitHub Actions builds:
 - GitHub Pages deployment from `main` (requires Pages to be enabled with **GitHub Actions** as its source in repository Settings → Pages)
 - Automated prerelease installers after verified CI builds on `main`
 - `SHA256SUMS.txt` published with every cross-platform prerelease after EXE/DMG payload sanity checks
+- CI-runner installer smoke: Windows silent NSIS install and 8-second launch; macOS DMG mount, bundle metadata and 8-second launch
+- Post-publication verification downloads EXE, DMG and `SHA256SUMS.txt` back from GitHub Release and checks the published hashes
 
 Preview installers are **unsigned** until Developer ID / Windows code-signing credentials are configured. CI success is not the same as real-device install verification.
 
@@ -64,9 +66,9 @@ Foreground app sampling is an approximation of elapsed time, not proof of produc
 
 ## Release acceptance
 
-- CI builds Windows NSIS and macOS DMG, but CI does not verify installer launch on real devices.
+- CI builds Windows NSIS and macOS DMG. CI-hosted OS-runner smoke checks are not real-device, user-session, system-permission or signing/notarization acceptance.
 - Unsigned installers may trigger Windows SmartScreen or macOS Gatekeeper warnings. Apple Developer ID signing/notarization and Windows code signing require authorized credentials.
-- Enable GitHub Pages manually in repository Settings → Pages, choose **GitHub Actions**, then rerun the Web dashboard workflow. The GitHub Actions token cannot necessarily create a Pages site.
+- GitHub Pages is enabled using **GitHub Actions**. The web dashboard is published at https://kinzirva.github.io/VibeFriend/ ; verify browser interactions separately from CI deployment success.
 - Real-device installation, foreground collector accuracy, pause/resume, CSV export, and privacy verification are required before declaring P0 complete.
 
 See [ATTRIBUTION.md](./ATTRIBUTION.md).
