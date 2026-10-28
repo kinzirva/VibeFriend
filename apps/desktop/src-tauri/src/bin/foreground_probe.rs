@@ -6,7 +6,19 @@ mod store {
 }
 include!("../collector.rs");
 
+// The Tauri app links AppKit via its windowing runtime. The standalone
+// diagnostic must explicitly load AppKit before objc::class!(NSWorkspace).
+#[cfg(target_os = "macos")]
+#[link(name = "AppKit", kind = "framework")]
+unsafe extern "C" {
+    fn NSApplicationLoad() -> bool;
+}
+
 fn main() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        NSApplicationLoad();
+    }
     let expected = std::env::args()
         .nth(1)
         .expect("usage: cargo run --bin foreground_probe -- <expected-app-name>");
