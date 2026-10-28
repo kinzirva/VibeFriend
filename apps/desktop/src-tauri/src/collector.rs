@@ -296,10 +296,66 @@ mod sample_gate_tests {
     }
 }
 
+// A 5-second poll only knows the foreground application at its endpoints.
+// If the app changed between polls, assigning the entire preceding interval
+// to the newly focused app would misattribute usage. Drop that ambiguous tick
+// and start a fresh baseline. This intentionally favors privacy/accuracy over
+// counting every transition second.
+fn stable_foreground_sample(
+    previous: &mut Option<String>,
+    current: Option<String>,
+    eligible: bool,
+) -> Option<String> {
+    if !eligible {
+        *previous = None;
+        return None;
+    }
+    let current = current.filter(|app| !app.eq_ignore_ascii_case("VibeFriend"));
+    let sample = current.as_ref().and_then(|app| {
+        previous
+            .as_ref()
+            .filter(|last| last.eq_ignore_ascii_case(app))
+            .map(|_| app.clone())
+    });
+    *previous = current;
+    sample
+}
+
+#[cfg(test)]
+mod foreground_transition_tests {
+    use super::*;
+
+    #[test]
+    fn never_credit_transition_interval_to_the_new_foreground_app() {
+        let mut previous = None;
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Editor".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Editor".into()), true), Some("Editor".into()));
+        // Switch: the last five seconds cannot safely be assigned to Browser.
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("browser".into()), true), Some("browser".into()));
+        // A lock/idle/inactive tick resets the baseline even if the app stays.
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), false), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), Some("Browser".into()));
+        // Never attribute the tracker's own window.
+        assert_eq!(stable_foreground_sample(&mut previous, Some("VibeFriend".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), None);
+    }
+
+    #[test]
+    fn missing_foreground_process_resets_the_baseline() {
+        let mut previous = None;
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Editor".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, None, true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Editor".into()), true), None);
+    }
+}
+
 pub fn spawn_collector(state: Arc<AppState>) {
     thread::spawn(move || {
         let mut last_tick = Instant::now();
         let mut last_generation = state.generation();
+        let mut previous_foreground: Option<String> = None;
         loop {
             thread::sleep(Duration::from_secs(SAMPLE_SECONDS));
             let now = Instant::now();
@@ -310,18 +366,20 @@ pub fn spawn_collector(state: Arc<AppState>) {
             if generation != last_generation {
                 // Never credit time before Resume or spanning Pause/Delete.
                 last_generation = generation;
+                previous_foreground = None;
                 continue;
             }
-            if !sample_eligible(state.is_tracking(), elapsed, idle_duration(), session_is_unlocked()) {
-                continue;
-            }
-
+            let eligible = sample_eligible(
+                state.is_tracking(),
+                elapsed,
+                idle_duration(),
+                session_is_unlocked(),
+            );
+            let foreground = if eligible { foreground_application() } else { None };
+            let stable_app = stable_foreground_sample(&mut previous_foreground, foreground, eligible);
             let seconds = elapsed.as_secs().min(SAMPLE_SECONDS) as i64;
-            if seconds == 0 {
-                continue;
-            }
-            if let Some(app) = foreground_application() {
-                if !app.eq_ignore_ascii_case("VibeFriend") {
+            if seconds > 0 {
+                if let Some(app) = stable_app {
                     let _ = state.record(&app, seconds, generation);
                 }
             }
