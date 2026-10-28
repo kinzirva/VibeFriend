@@ -71,6 +71,61 @@ jobs:
           test "${#files[@]}" -eq 1
           test -s "${files[0]}"
 
+      - name: Smoke test Windows NSIS install and launch on CI runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'apps/desktop/src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Missing NSIS installer' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'vibefriend-install-smoke'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS silent install failed: $($process.ExitCode)" }
+          $binary = Join-Path $installDir 'VibeFriend.exe'
+          if (-not (Test-Path $binary)) { throw "Installed executable missing: $binary" }
+          $app = Start-Process -FilePath $binary -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            $app.Refresh()
+            if ($app.HasExited) { throw "Installed VibeFriend exited early: $($app.ExitCode)" }
+            Write-Host 'Windows runner NSIS install and 8-second process smoke: OK'
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Smoke test macOS DMG mount and launch on CI runner
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg)
+          test "${#dmgs[@]}" -eq 1
+          mount_dir="$(mktemp -d "${RUNNER_TEMP}/vibefriend-dmg.XXXXXX")"
+          app_pid=""
+          cleanup() {
+            if [[ -n "$app_pid" ]]; then
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+            fi
+            hdiutil detach "$mount_dir" -quiet || true
+            rmdir "$mount_dir" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "${dmgs[0]}"
+          app="$mount_dir/VibeFriend.app"
+          test -x "$app/Contents/MacOS/VibeFriend"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "com.vibefriend.app"
+          "$app/Contents/MacOS/VibeFriend" >"${RUNNER_TEMP}/vibefriend-launch.log" 2>&1 &
+          app_pid=$!
+          sleep 8
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            cat "${RUNNER_TEMP}/vibefriend-launch.log"
+            echo 'VibeFriend macOS process exited before 8-second smoke interval' >&2
+            exit 1
+          fi
+          echo 'macOS runner DMG mount, bundle metadata and 8-second process smoke: OK'
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -128,3 +183,21 @@ jobs:
           TAG: v0.2.0-alpha.${{ github.run_number }}
         run: |
           gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
+
+      - name: Verify published prerelease by downloading GitHub assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.2.0-alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          verify_dir="$(mktemp -d)"
+          gh release download "$TAG" --dir "$verify_dir" \
+            --pattern '*.exe' --pattern '*.dmg' --pattern 'SHA256SUMS.txt'
+          test "$(find "$verify_dir" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')" -eq 1
+          test "$(find "$verify_dir" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d ' ')" -eq 1
+          test -s "$verify_dir/SHA256SUMS.txt"
+          diff -u release/SHA256SUMS.txt "$verify_dir/SHA256SUMS.txt"
+          (cd "$verify_dir" && sha256sum --check SHA256SUMS.txt)
+          echo "GitHub Release $TAG: downloaded EXE, DMG and manifest; hashes verified"
+
