@@ -114,9 +114,11 @@ jobs:
           trap cleanup EXIT
           hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "${dmgs[0]}"
           app="$mount_dir/VibeFriend.app"
-          test -x "$app/Contents/MacOS/VibeFriend"
+          test -d "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "com.vibefriend.app"
-          "$app/Contents/MacOS/VibeFriend" >"${RUNNER_TEMP}/vibefriend-launch.log" 2>&1 &
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          test -x "$app/Contents/MacOS/$executable_name"
+          "$app/Contents/MacOS/$executable_name" >"${RUNNER_TEMP}/vibefriend-launch.log" 2>&1 &
           app_pid=$!
           sleep 8
           if ! kill -0 "$app_pid" 2>/dev/null; then
