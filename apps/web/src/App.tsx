@@ -118,8 +118,14 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const today = localDay(new Date());
-  const monday = new Date();
+  // Keep Today/This week accurate when the dashboard stays open past midnight.
+  // The timer updates only the local calendar day, without collecting new data.
+  const [today, setToday] = useState(() => localDay(new Date()));
+  useEffect(() => {
+    const timer = window.setInterval(() => setToday(localDay(new Date())), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const monday = new Date(`${today}T12:00:00`);
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const weekStart = localDay(monday);
   const filteredRows = useMemo(() => rows.filter((row) =>
