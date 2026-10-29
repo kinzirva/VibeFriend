@@ -117,8 +117,36 @@ echo "Native GUI Resume -> real TextEdit foreground -> SQLite activity_events: $
 ui_button "Pause" "click"
 sleep 2
 ui_button "Resume" "check"
-before="$(sqlite3 "$db" 'SELECT count(*) FROM activity_events;')"
-sleep 12
-after="$(sqlite3 "$db" 'SELECT count(*) FROM activity_events;')"
-test "$before" = "$after" || { echo "::error::Native GUI Pause failed to stop SQLite growth ($before -> $after)"; exit 1; }
-echo "PASS: installed macOS WKWebView Resume -> native IPC -> real TextEdit collector -> SQLite -> Pause stable 12s (hosted VM only)"
+
+# AX queries focus ActivityTracker, which is deliberately excluded by the
+# collector. A count-only Pause check with the tracker in foreground would be
+# a false positive even if native collection never stopped. Restore a known
+# recordable foreground app, keep the idle gate active and verify its identity.
+osascript -e 'tell application "TextEdit" to activate'
+osascript -e 'tell application "System Events" to key code 113'
+frontmost="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+test "$frontmost" = "TextEdit" || { echo "::error::Pause probe foreground is '$frontmost', expected TextEdit"; exit 1; }
+before="$(count_textedit)"
+sleep 15
+after="$(count_textedit)"
+test "$before" = "$after" || { echo "::error::Native GUI Pause failed: real TextEdit samples grew ($before -> $after)"; exit 1; }
+echo "Native GUI Pause: TextEdit foreground confirmed; no new samples for 15s"
+
+# Positive control: the same TextEdit fixture must produce NEW native SQLite
+# samples after Resume. This rejects false green from a dead collector, lost
+# permissions or an ineligible OS session during the Pause observation.
+ui_button "Resume" "click"
+sleep 2
+ui_button "Pause" "check"
+osascript -e 'tell application "TextEdit" to activate'
+osascript -e 'tell application "System Events" to key code 113'
+frontmost="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')"
+test "$frontmost" = "TextEdit" || { echo "::error::Resume control foreground is '$frontmost', expected TextEdit"; exit 1; }
+resumed="$after"
+for attempt in $(seq 1 8); do
+  sleep 5
+  resumed="$(count_textedit)"
+  [ "$resumed" -gt "$after" ] && break
+done
+test "$resumed" -gt "$after" || { echo "::error::Resume did not restart real TextEdit sampling ($after -> $resumed)"; exit 1; }
+echo "PASS: installed macOS WKWebView Resume -> native IPC -> real TextEdit SQLite -> Pause stable 15s with TextEdit foreground -> Resume produces new samples (hosted VM only)"
