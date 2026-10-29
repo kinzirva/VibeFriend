@@ -29,7 +29,7 @@ test("browser-only dashboard imports, persists, exports and clears local CSV", a
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("vibefriend-activity.csv");
+  expect(download.suggestedFilename()).toBe("activitytracker-activity.csv");
   const content = await readFile(await download.path(), "utf8");
   expect(content).toContain('2026-10-28,"Browser, ""Private""",5');
   expect(content).toContain("2026-10-27,\"Editor\",15");
