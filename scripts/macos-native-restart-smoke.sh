@@ -55,7 +55,7 @@ on run argv
         if elementRole is "AXButton" then
           set buttonCount to buttonCount + 1
           set elementName to (name of elementRef) as text
-          if length of buttonSummary < 600 then set buttonSummary to buttonSummary & " [" & elementName & "]
+          if length of buttonSummary < 600 then set buttonSummary to buttonSummary & " [" & elementName & "]"
           if elementName is "Resume" then
             return "PASS: restarted installed WKWebView exposes Resume (tracking off)"
           end if
