@@ -149,4 +149,32 @@ for attempt in $(seq 1 8); do
   [ "$resumed" -gt "$after" ] && break
 done
 test "$resumed" -gt "$after" || { echo "::error::Resume did not restart real TextEdit sampling ($after -> $resumed)"; exit 1; }
+# Re-pause via the installed WKWebView UI to take a stable production DB
+# snapshot. Compare *all* daily report seconds to the complete event ledger,
+# not just the recent (200-row-limited) UI timeline. No synthetic rows.
+ui_button "Pause" "click"
+sleep 2
+ui_button "Resume" "check"
+daily_seconds="$(sqlite3 "$db" 'SELECT COALESCE(SUM(seconds),0) FROM activity;')"
+event_seconds="$(sqlite3 "$db" 'SELECT COALESCE(SUM(seconds),0) FROM activity_events;')"
+textedit_daily="$(sqlite3 "$db" "SELECT COALESCE(SUM(seconds),0) FROM activity WHERE lower(app)='textedit';")"
+textedit_events="$(sqlite3 "$db" "SELECT COALESCE(SUM(seconds),0) FROM activity_events WHERE lower(app)='textedit';")"
+test "$daily_seconds" -gt 0 || { echo "::error::No real daily report seconds"; exit 1; }
+test "$daily_seconds" = "$event_seconds" || { echo "::error::Daily report/event mismatch: $daily_seconds vs $event_seconds"; exit 1; }
+test "$textedit_daily" -gt 0 || { echo "::error::No TextEdit daily report seconds"; exit 1; }
+test "$textedit_daily" = "$textedit_events" || { echo "::error::TextEdit daily/event mismatch: $textedit_daily vs $textedit_events"; exit 1; }
+
+# The tracker must never record itself, even when the AX automation brought
+# its own window to the foreground for Resume/Pause/report interactions.
+self_rows="$(sqlite3 "$db" "SELECT count(*) FROM activity_events WHERE lower(app) IN ('activitytracker','vibefriend');")"
+test "$self_rows" = 0 || { echo "::error::Tracker recorded its own foreground samples: $self_rows"; exit 1; }
+echo "PASS: macOS real SQLite daily totals == event ledger ($daily_seconds seconds; TextEdit $textedit_daily seconds); self-tracking events=0"
+
+# Exercise the installed WKWebView period controls, not a browser fixture.
+# These AX button actions are native GUI checks; the SQLite assertions above
+# verify the underlying report data rather than claiming AX text accuracy.
+ui_button "All time" "click"
+ui_button "Today" "click"
+ui_button "This week" "click"
+echo "PASS: macOS installed WKWebView All time/Today/This week report controls accessible via AXPress (hosted VM only)"
 echo "PASS: installed macOS WKWebView Resume -> native IPC -> real TextEdit SQLite -> Pause stable 15s with TextEdit foreground -> Resume produces new samples (hosted VM only)"
