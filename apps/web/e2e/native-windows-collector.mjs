@@ -145,8 +145,9 @@ try {
   }
   console.log(`PASS: real Windows SQLite daily totals == event seconds == native CSV; installed WebView2 report/timeline UI consistent (${pausedRows.length} daily rows, ${pausedEvents.length} events)`);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("button", { name: "Delete all data", exact: true }).click();
   await expect.poll(tracking).toBe(false);
   await expect.poll(activity).toEqual([]);
   await expect.poll(timeline).toEqual([]);

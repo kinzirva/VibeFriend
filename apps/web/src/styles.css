@@ -74,3 +74,11 @@ footer { display: flex; justify-content: space-between; gap: 20px; color: #67789
   .focus .panelHead { align-items: flex-start; }
   .focusControls { align-items: flex-start; }
 }
+
+/* Explicit local-data deletion confirmation: accessible in both WebView2 and WKWebView. */
+.deleteConfirm { margin-top: 16px; padding: 16px; border: 1px solid #a76855; border-radius: 12px; background: rgba(98, 43, 34, .22); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.deleteConfirm strong { color: #ffe3d7; }
+.deleteConfirm p { margin: 5px 0 0; font-size: 13px; }
+.deleteConfirmActions { display: flex; gap: 8px; flex-shrink: 0; }
+.danger { border: 1px solid #f1a28b; border-radius: 10px; padding: 9px 13px; color: #2c130e; background: #f1a28b; font-weight: 800; }
+@media (max-width: 780px) { .deleteConfirm { align-items: stretch; flex-direction: column; } }

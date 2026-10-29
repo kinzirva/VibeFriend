@@ -68,12 +68,15 @@ test("desktop dashboard calls consent, timeline, export and delete IPC commands"
   expect(await readFile(await download.path(), "utf8"))
     .toBe('day,app,seconds\n2026-10-28,"Editor",5\n');
 
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Delete local data" }).click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete all data" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(await page.evaluate(() => Reflect.get(window, "__VF_TEST_BRIDGE__").rows.length)).toBe(1);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data" }).click();
+  await page.getByRole("button", { name: "Delete all data" }).click();
   await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
   await expect(page.locator(".metrics article").nth(1).locator("strong")).toHaveText("0");
   await expect(page.locator(".panel.timeline").last().getByText("No activity samples yet. Press Resume to start tracking.")).toBeVisible();
@@ -125,8 +128,8 @@ test("late desktop poll cannot resurrect data after confirmed deletion", async (
 
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => Boolean(Reflect.get(window, "__VF_TEST_BRIDGE__").resolveFirstRead))).toBe(true);
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data" }).click();
+  await page.getByRole("button", { name: "Delete all data" }).click();
   await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
 
   // The earlier IPC query returns a snapshot taken BEFORE deletion.
@@ -183,8 +186,8 @@ test("late desktop CSV export cannot download private rows after deletion", asyn
     Boolean(Reflect.get(window, "__VF_TEST_BRIDGE__").resolveExport)
   )).toBe(true);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data" }).click();
+  await page.getByRole("button", { name: "Delete all data" }).click();
   await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
 
   await page.evaluate(() => Reflect.get(window, "__VF_TEST_BRIDGE__").resolveExport());
