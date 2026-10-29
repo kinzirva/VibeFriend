@@ -35,6 +35,7 @@ jobs:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           PUBLISH_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
           PUBLISH_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          PUBLISH_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           if [ -n "${EVENT_TAG:-}" ]; then
@@ -69,6 +70,17 @@ jobs:
             fi
             echo "::error::Published release $tag not found after retries"
             exit 1
+          fi
+          # A successful SHA256/install smoke for the wrong commit is not
+          # acceptance of this publisher run. Reject stale/mis-targeted tags.
+          # Our publisher creates the release with --target "$GITHUB_SHA".
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            release_sha="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq '.targetCommitish')"
+            if [ "$release_sha" != "$PUBLISH_HEAD_SHA" ]; then
+              echo "::error::Release $tag target $release_sha does not match publisher head $PUBLISH_HEAD_SHA"
+              exit 1
+            fi
+            echo "PASS: release target SHA matches exact publisher head $PUBLISH_HEAD_SHA"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "published=true" >> "$GITHUB_OUTPUT"
