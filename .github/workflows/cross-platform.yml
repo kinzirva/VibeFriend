@@ -231,14 +231,13 @@ jobs:
 
 
   native-macos-gui-probe:
-    name: macOS installed WKWebView GUI/IPC experimental probe
+    name: macOS installed WKWebView GUI/IPC P0 smoke
     needs: desktop
     runs-on: macos-15
     timeout-minutes: 20
-    # Hosted runners may deny Accessibility/TCC to AppleScript. Keep this
-    # diagnostic non-gating until an actual GUI -> IPC -> SQLite run passes.
-    # A green overall workflow must NEVER be counted as this job passing.
-    continue-on-error: true
+    # This is a required hosted-VM functional check: real installed WKWebView
+    # AXPress -> production Tauri IPC -> TextEdit sampling in SQLite -> Pause.
+    # Do not treat this as physical-Mac acceptance or code signing.
     steps:
       - uses: actions/checkout@v4
 
