@@ -42,9 +42,14 @@ jobs:
             # The tag is derived from the EXACT completed build, never 'latest'.
             tag="v0.2.0-alpha.${PUBLISH_RUN_NUMBER}"
           else
-            tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 1 --json tagName --jq '.[0].tagName')"
+            # The GitHub releases API may place an older release first (e.g.
+            # alpha.96 ahead of alpha.161). Never assume list order is recency.
+            # Manual dispatch must smoke the most recently PUBLISHED release.
+            tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '[.[] | select(.draft == false and .published_at != null)] | max_by(.published_at) | .tag_name')"
           fi
           test -n "$tag"
+          test "$tag" != "null"
           # A failed publishing run may have failed BEFORE creating its release
           # (skip), or AFTER creating it (still smoke-test that release).
           # Allow for GitHub API propagation; never fall back to "latest".
