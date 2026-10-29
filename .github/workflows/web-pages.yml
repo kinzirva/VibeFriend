@@ -36,7 +36,9 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 cannot install Chromium dependencies on Ubuntu 26.04.
+    # ubuntu-latest may move ahead of Playwright's supported OS matrix.
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
