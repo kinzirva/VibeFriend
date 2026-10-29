@@ -163,7 +163,9 @@ jobs:
   prerelease:
     name: Publish verified CI installers
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [desktop, native-windows-ipc]
+    # Do not publish installers unless BOTH real installed OS GUI/IPC smoke jobs pass.
+    # The macOS gate must not be a merely informational job.
+    needs: [desktop, native-windows-ipc, native-macos-gui-probe]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
