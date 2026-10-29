@@ -103,6 +103,9 @@ jobs:
                   time.sleep(10)
           PY
 
+      # The deploy job downloads only dist; it has no source checkout.
+      # Playwright needs package.json, config and e2e test sources.
+      - uses: actions/checkout@v4
       # Asset identity is not sufficient: exercise the real HTTPS app in
       # Chromium, including browser-only privacy and CSV lifecycle.
       - uses: actions/setup-node@v4
