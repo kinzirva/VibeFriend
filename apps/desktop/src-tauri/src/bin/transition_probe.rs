@@ -118,6 +118,23 @@ fn activate_second_app() {
             }
         }
     });
+
+    // Diagnose whether Launch Services actually changed the system's active
+    // application, independently of NSWorkspace's in-process cached state.
+    for (program, args) in [
+        ("osascript", vec!["-e", "tell application \"System Events\" to get name of first application process whose frontmost is true"]),
+        ("lsappinfo", vec!["front"]),
+    ] {
+        match std::process::Command::new(program).args(&args).output() {
+            Ok(output) => eprintln!(
+                "macOS foreground diagnostic {program}: status={} stdout={:?} stderr={:?}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(error) => eprintln!("macOS foreground diagnostic {program} failed: {error}"),
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
