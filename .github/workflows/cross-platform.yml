@@ -78,10 +78,54 @@ jobs:
           path: ${{ matrix.path }}
           if-no-files-found: error
 
+  native-windows-ipc:
+    name: Windows native WebView2 to Tauri IPC smoke
+    needs: desktop
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JavaScript test dependencies
+        run: npm install
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: VibeFriend-Windows
+          path: native-release
+
+      - name: Install and test actual Windows GUI to native IPC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem native-release -Filter '*x64-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Windows NSIS artifact missing' }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "NSIS install failed: $($install.ExitCode)" }
+          $app = @(
+            (Join-Path $env:LOCALAPPDATA 'ActivityTracker/vibefriend.exe'),
+            (Join-Path $env:LOCALAPPDATA 'ActivityTracker/ActivityTracker.exe'),
+            (Join-Path $env:LOCALAPPDATA 'VibeFriend/vibefriend.exe')
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $app) { throw 'Installed desktop executable missing' }
+          # Enable CDP for this ephemeral CI process only. Do not ship this flag.
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'
+          $process = Start-Process -FilePath $app -PassThru
+          try {
+            node apps/web/e2e/native-windows-ipc.mjs
+            if ($LASTEXITCODE -ne 0) { throw "Native WebView2 IPC smoke failed: $LASTEXITCODE" }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+
   prerelease:
     name: Publish verified CI installers
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: desktop
+    needs: [desktop, native-windows-ipc]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
