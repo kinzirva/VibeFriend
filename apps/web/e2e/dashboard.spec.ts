@@ -156,9 +156,9 @@ test("P0 reports display exact seconds rather than rounding real samples down to
     mimeType: "text/csv",
     buffer: Buffer.from([
       "day,app,seconds",
-      "2026-10-28,FiveSeconds,5",
-      "2026-10-28,OneMinuteFive,65",
-      "2026-10-28,OneHourOneMinuteFive,3665",
+      "2026-10-28,ShortSample,5",
+      "2026-10-28,MinuteSample,65",
+      "2026-10-28,HourSample,3665",
       "",
     ].join("\n")),
   });
@@ -169,9 +169,9 @@ test("P0 reports display exact seconds rather than rounding real samples down to
   await expect(page.locator(".metrics article").first().locator("strong"))
     .toHaveText("1h 2m 15s");
   for (const [app, duration] of [
-    ["FiveSeconds", "5s"],
-    ["OneMinuteFive", "1m 5s"],
-    ["OneHourOneMinuteFive", "1h 1m 5s"],
+    ["ShortSample", "5s"],
+    ["MinuteSample", "1m 5s"],
+    ["HourSample", "1h 1m 5s"],
   ]) {
     await expect(page.locator(".barRow").filter({ hasText: app }).locator("b"))
       .toHaveText(duration);
