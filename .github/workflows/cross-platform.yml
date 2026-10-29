@@ -263,6 +263,18 @@ jobs:
         shell: bash
         run: bash scripts/macos-native-gui-smoke.sh
 
+      - name: Probe installed macOS WKWebView CSV export and reconcile downloaded file
+        shell: bash
+        run: bash scripts/macos-native-csv-smoke.sh
+
+      - name: Upload native macOS CSV diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeFriend-macOS-native-csv-log
+          path: ${{ runner.temp }}/macos-native-csv.log
+          if-no-files-found: ignore
+
       - name: Verify macOS real restart persistence and default-off consent
         shell: bash
         run: bash scripts/macos-native-restart-smoke.sh
