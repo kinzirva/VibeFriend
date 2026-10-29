@@ -112,14 +112,21 @@ jobs:
             (Join-Path $env:LOCALAPPDATA 'VibeFriend/vibefriend.exe')
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $app) { throw 'Installed desktop executable missing' }
-          # Enable CDP for this ephemeral CI process only. Do not ship this flag.
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'
+          # WebView2 Runtime 150 ignores WEBVIEW2_* env overrides in elevated hosts.
+          # CI-only HKLM policy is honored by elevated WebView2; remove it in finally.
+          # https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+          $debugPolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          $exeName = [IO.Path]::GetFileName($app)
+          New-Item -Path $debugPolicy -Force | Out-Null
+          New-ItemProperty -Path $debugPolicy -Name $exeName -PropertyType String -Value '--remote-debugging-port=9222' -Force | Out-Null
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
           Write-Host "Runner identity: $(whoami)"
           Write-Host "PowerShell session ID: $((Get-Process -Id $PID).SessionId)"
           Write-Host "Executable: $app"
-          Write-Host "WebView2 CDP argument enabled for this CI process only"
-          $process = Start-Process -FilePath $app -PassThru
+          Write-Host "WebView2 loopback CDP enabled for this ephemeral CI process only (HKLM policy: $exeName)"
+          $process = $null
           try {
+            $process = Start-Process -FilePath $app -PassThru
             Start-Sleep -Seconds 5
             $process.Refresh()
             Write-Host "Desktop process PID=$($process.Id) session=$($process.SessionId) exited=$($process.HasExited)"
@@ -147,7 +154,8 @@ jobs:
             } catch {
               Write-Host "Diagnostic collection error: $_"
             }
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if ($process) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+            Remove-ItemProperty -Path $debugPolicy -Name $exeName -ErrorAction SilentlyContinue
           }
 
   prerelease:
