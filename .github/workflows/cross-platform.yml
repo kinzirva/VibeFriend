@@ -229,3 +229,32 @@ jobs:
           (cd "$verify_dir" && sha256sum --check SHA256SUMS.txt)
           echo "GitHub Release $TAG: downloaded EXE, DMG and manifest; hashes verified"
 
+
+  native-macos-gui-probe:
+    name: macOS installed WKWebView GUI/IPC experimental probe
+    needs: desktop
+    runs-on: macos-15
+    timeout-minutes: 20
+    # Hosted runners may deny Accessibility/TCC to AppleScript. Keep this
+    # diagnostic non-gating until an actual GUI -> IPC -> SQLite run passes.
+    # A green overall workflow must NEVER be counted as this job passing.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: VibeFriend-macOS
+          path: native-release
+
+      - name: Exercise installed macOS GUI, native IPC and real foreground SQLite
+        shell: bash
+        run: bash scripts/macos-native-gui-smoke.sh
+
+      - name: Upload native macOS GUI diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeFriend-macOS-native-gui-probe-log
+          path: ${{ runner.temp }}/macos-native-gui.log
+          if-no-files-found: ignore
