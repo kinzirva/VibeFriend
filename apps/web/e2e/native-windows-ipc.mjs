@@ -54,7 +54,11 @@ try {
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data", exact: true }).click();
-  await expect(page.getByText("All local desktop activity records deleted. Tracking paused.")).toBeVisible();
+  // The success banner is transient: a 5-second background refresh can replace
+  // it before a slow hosted runner reaches this assertion. Verify durable UI
+  // and actual native SQLite state instead of racing the notification text.
+  await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+  await expect.poll(nativeTracking).toBe(false);
   expect(await nativeTracking()).toBe(false);
   expect(await nativeActivity()).toEqual([]);
   expect(await nativeTimeline()).toEqual([]);
