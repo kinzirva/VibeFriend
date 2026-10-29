@@ -1,8 +1,8 @@
-# VibeFriend
+# ActivityTracker
 
 Privacy-first, local-first activity and time tracking for **Windows, macOS and the Web**.
 
-VibeFriend is inspired by [Weft](https://github.com/tiann/weft), but the cross-platform implementation is independently written.
+ActivityTracker (formerly VibeFriend) is inspired by [Weft](https://github.com/tiann/weft), but the cross-platform implementation is independently written.
 
 ## Product
 
@@ -61,7 +61,7 @@ Preview installers are **unsigned** until Developer ID / Windows code-signing cr
 
 ## Privacy and accuracy
 
-Desktop tracking starts **disabled** and only collects after the user presses Resume. Activity is stored in the local SQLite database, not uploaded to a VibeFriend server. The app does not capture screenshots, keystrokes, document contents, window titles or browser URLs. The browser dashboard cannot access OS-level activity; it displays only CSV data the user imports and stores that import in the current browser's local storage until cleared. Desktop CSV import is not supported yet.
+Desktop tracking starts **disabled** and only collects after the user presses Resume. Activity is stored in the local SQLite database, not uploaded to an ActivityTracker server. The app does not capture screenshots, keystrokes, document contents, window titles or browser URLs. The browser dashboard cannot access OS-level activity; it displays only CSV data the user imports and stores that import in the current browser's local storage until cleared. Desktop CSV import is not supported yet.
 
 Foreground app sampling is an approximation of elapsed time, not proof of productive work. Windows uses native last-input time; macOS uses CoreGraphics last-input time. Sampling stops after 60 seconds without input and fails closed when idle status cannot be read. Lock-screen/session-switch and real-device accuracy still require testing. Intervals immediately after consent changes are deliberately skipped so pre-consent time is never credited. New samples are stored in a chronological SQLite events table; earlier aggregated records are not backfilled as fabricated events. The recent timeline shows the latest 200 samples, while daily totals remain aggregated. CSV export includes all daily rows, not only the recent UI preview. Tracking consent resets to off on each desktop launch. The Delete local data action pauses collection, transactionally removes both aggregated and timestamped records, and compacts the SQLite file. SQLite secure-delete is enabled for future deletes. This is application-level deletion, **not a guarantee of forensic erasure** from filesystem snapshots, external backups, or SSD wear-level copies.
 

@@ -98,16 +98,20 @@ jobs:
         run: |
           $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ -and (Test-Path $_) }
           $app = $null
+          # Tauri productName can change independently of the Cargo binary name.
           foreach ($root in $roots) {
-            $app = Get-ChildItem -Path $root -Filter "VibeFriend.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            foreach ($name in @("ActivityTracker.exe", "VibeFriend.exe")) {
+              $app = Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($app) { break }
+            }
             if ($app) { break }
           }
-          if (-not $app) { throw "Installed VibeFriend.exe not found" }
+          if (-not $app) { throw "Installed ActivityTracker/VibeFriend executable not found" }
           Write-Host "Launching $($app.FullName)"
           $proc = Start-Process -FilePath $app.FullName -PassThru
           Start-Sleep -Seconds 10
-          if ($proc.HasExited) { throw "VibeFriend exited early with code $($proc.ExitCode)" }
-          Write-Host "VibeFriend stayed alive for 10 seconds (PID $($proc.Id))"
+          if ($proc.HasExited) { throw "$($app.Name) exited early with code $($proc.ExitCode)" }
+          Write-Host "$($app.Name) stayed alive for 10 seconds (PID $($proc.Id))"
           Stop-Process -Id $proc.Id -Force
 
   macos-smoke:
@@ -147,12 +151,15 @@ jobs:
           echo "$attach_output"
           mount_point="$(echo "$attach_output" | awk '/\/Volumes\// {sub(/^.*\t/,""); print; exit}')"
           test -d "$mount_point"
-          app="$(find "$mount_point" -maxdepth 2 -type d -name 'VibeFriend.app' -print -quit)"
+          # Bundle display name may change; launch the executable declared by Info.plist.
+          app="$(find "$mount_point" -maxdepth 2 -type d -name '*.app' -print -quit)"
           test -n "$app"
           mkdir -p "$RUNNER_TEMP/Applications"
           cp -R "$app" "$RUNNER_TEMP/Applications/"
-          installed="$RUNNER_TEMP/Applications/VibeFriend.app"
-          bin="$installed/Contents/MacOS/VibeFriend"
+          installed="$RUNNER_TEMP/Applications/$(basename "$app")"
+          bin_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$installed/Contents/Info.plist")"
+          test -n "$bin_name"
+          bin="$installed/Contents/MacOS/$bin_name"
           test -x "$bin"
           xattr -dr com.apple.quarantine "$installed" 2>/dev/null || true
           echo "Launching $bin"
@@ -163,7 +170,7 @@ jobs:
             cat "$RUNNER_TEMP/vibefriend-macos.log" || true
             exit 1
           fi
-          echo "VibeFriend stayed alive for 10 seconds (PID $pid)"
+          echo "$(basename "$installed") stayed alive for 10 seconds (PID $pid)"
           kill "$pid" || true
           wait "$pid" || true
           hdiutil detach "$mount_point" || true

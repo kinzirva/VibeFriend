@@ -128,7 +128,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.2.0-alpha.${{ github.run_number }}
         run: |
-          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "VibeFriend $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
+          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "ActivityTracker $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
 
       - name: Verify published prerelease by downloading GitHub assets
         shell: bash
