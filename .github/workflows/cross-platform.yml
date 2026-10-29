@@ -267,6 +267,18 @@ jobs:
         shell: bash
         run: bash scripts/macos-native-restart-smoke.sh
 
+      - name: Verify installed macOS native Delete clears SQLite and pauses tracking
+        shell: bash
+        run: bash scripts/macos-native-delete-smoke.sh
+
+      - name: Upload native macOS Delete diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeFriend-macOS-native-delete-log
+          path: ${{ runner.temp }}/macos-native-delete.log
+          if-no-files-found: ignore
+
       - name: Upload native macOS restart diagnostic log
         if: always()
         uses: actions/upload-artifact@v4
