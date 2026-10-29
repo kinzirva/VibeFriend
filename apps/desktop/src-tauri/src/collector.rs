@@ -310,7 +310,11 @@ fn stable_foreground_sample(
         *previous = None;
         return None;
     }
-    let current = current.filter(|app| !app.eq_ignore_ascii_case("VibeFriend"));
+    let current = current.filter(|app| {
+        !["VibeFriend", "ActivityTracker"]
+            .iter()
+            .any(|own_name| app.eq_ignore_ascii_case(own_name))
+    });
     let sample = current.as_ref().and_then(|app| {
         previous
             .as_ref()
@@ -339,6 +343,10 @@ mod foreground_transition_tests {
         assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), Some("Browser".into()));
         // Never attribute the tracker's own window.
         assert_eq!(stable_foreground_sample(&mut previous, Some("VibeFriend".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), None);
+        // Renamed macOS bundle is ActivityTracker; never record the tracker itself.
+        assert_eq!(stable_foreground_sample(&mut previous, Some("ActivityTracker".into()), true), None);
+        assert_eq!(stable_foreground_sample(&mut previous, Some("activitytracker".into()), true), None);
         assert_eq!(stable_foreground_sample(&mut previous, Some("Browser".into()), true), None);
     }
 
