@@ -37,7 +37,8 @@ try {
     return window.__TAURI_INTERNALS__.invoke(command);
   }, name);
   const tracking = () => invoke("get_tracking");
-  const notepadCount = async () => (await invoke("get_timeline"))
+  const timeline = () => invoke("get_timeline");
+  const notepadCount = async () => (await timeline())
     .filter((event) => event.app.toLowerCase() === "notepad").length;
 
   // The preceding installed native test deletes all data and pauses.
@@ -115,12 +116,21 @@ Write-Host "PASS: real Windows OS input desktop switched away from Default"
     throw new Error("OS lock transition not independently confirmed");
   }
 
-  // The app is still tracking-enabled, but must NOT attribute the locked
-  // desktop to Notepad. Check the real native SQLite timeline via IPC.
+  // Require the *entire* production activity_events timeline to stop growing,
+  // not just Notepad attribution: a broken collector could record Winlogon or
+  // another process while the workstation is locked.
+  expect(await tracking()).toBe(true);
+  const lockedBaseline = await timeline();
+  const baselineTotal = lockedBaseline.length;
+  const baselineNotepad = lockedBaseline.filter((event) => event.app.toLowerCase() === "notepad").length;
+  expect(baselineNotepad).toBeGreaterThanOrEqual(before);
   await wait(15000);
-  const after = await notepadCount();
-  expect(after).toBe(before);
-  console.log(`PASS: actual Windows LockWorkStation transition -> no new Notepad SQLite samples for 15s (${before} -> ${after}) (hosted VM only)`);
+  expect(await tracking()).toBe(true);
+  const lockedAfter = await timeline();
+  const after = lockedAfter.filter((event) => event.app.toLowerCase() === "notepad").length;
+  expect(lockedAfter.length).toBe(baselineTotal);
+  expect(after).toBe(baselineNotepad);
+  console.log(`PASS: actual Windows LockWorkStation transition -> no activity_events SQLite growth for 15s (all apps ${baselineTotal} -> ${lockedAfter.length}; Notepad ${baselineNotepad} -> ${after}; tracking remains enabled) (hosted VM only)`);
 } finally {
   await browser.close();
 }
