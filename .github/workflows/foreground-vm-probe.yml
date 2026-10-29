@@ -111,6 +111,6 @@ jobs:
           set -euo pipefail
           osascript -e 'tell application "TextEdit" to activate'
           osascript -e 'tell application "System Events" to key code 113' || true
-      - name: Verify real macOS TextEdit to Calculator transition and SQLite attribution
+      - name: Verify real macOS TextEdit to Finder transition and SQLite attribution
         working-directory: apps/desktop/src-tauri
-        run: cargo run --bin transition_probe -- TextEdit Calculator
+        run: cargo run --bin transition_probe -- TextEdit Finder
