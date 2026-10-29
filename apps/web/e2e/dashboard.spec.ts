@@ -147,3 +147,38 @@ test("dashboard updates Today and This week after midnight without a reload", as
   await expect(page.locator(".barRow").getByText("MondayApp")).toBeVisible();
   await expect(page.locator(".barRow").getByText("SundayApp")).toHaveCount(0);
 });
+
+test("P0 reports display exact seconds rather than rounding real samples down to zero", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-10-28T12:00:00Z"));
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "precise-activity.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from([
+      "day,app,seconds",
+      "2026-10-28,FiveSeconds,5",
+      "2026-10-28,OneMinuteFive,65",
+      "2026-10-28,OneHourOneMinuteFive,3665",
+      "",
+    ].join("\n")),
+  });
+  await expect(page.getByText(/Imported 3 rows/)).toBeVisible();
+
+  // These exact durations must be visible in both the attention map and the
+  // daily records, and the summary must preserve all fractional minutes.
+  await expect(page.locator(".metrics article").first().locator("strong"))
+    .toHaveText("1h 2m 15s");
+  for (const [app, duration] of [
+    ["FiveSeconds", "5s"],
+    ["OneMinuteFive", "1m 5s"],
+    ["OneHourOneMinuteFive", "1h 1m 5s"],
+  ]) {
+    await expect(page.locator(".barRow").filter({ hasText: app }).locator("b"))
+      .toHaveText(duration);
+    await expect(page.locator(".tableRow").filter({ hasText: app }).locator("span").last())
+      .toHaveText(duration);
+  }
+  await page.getByRole("button", { name: "This week" }).click();
+  await expect(page.locator(".metrics article").first().locator("strong"))
+    .toHaveText("1h 2m 15s");
+});
