@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VibeFriend",
+  "productName": "ActivityTracker",
   "version": "0.2.0",
   "identifier": "com.vibefriend.app",
   "build": {
@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "VibeFriend",
+        "title": "ActivityTracker",
         "width": 1180,
         "height": 760,
         "minWidth": 900,
