@@ -170,11 +170,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Download ONLY the two installer artifacts. Native GUI diagnostics are
+      # also named VibeFriend-* and must never become release assets.
       - uses: actions/download-artifact@v4
         with:
-          pattern: VibeFriend-*
+          name: VibeFriend-Windows
           path: release
-          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: VibeFriend-macOS
+          path: release
 
       - name: Verify release payloads
         shell: bash
@@ -212,7 +218,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.2.0-alpha.${{ github.run_number }}
         run: |
-          gh release create "$TAG" release/*             --target "$GITHUB_SHA"             --prerelease             --title "ActivityTracker $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
+          gh release create "$TAG" release/*.exe release/*.dmg release/SHA256SUMS.txt             --target "$GITHUB_SHA"             --prerelease             --title "ActivityTracker $TAG"             --notes "Automated unsigned cross-platform preview. Windows and macOS installers passed CI build, unit tests, payload validation and SHA256 generation. Public signed distribution is a later milestone."
 
       - name: Verify published prerelease by downloading GitHub assets
         shell: bash
