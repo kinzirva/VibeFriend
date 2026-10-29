@@ -10,10 +10,8 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/release-vm-smoke.yml
+  # Do not smoke the previous 'latest' Release on a workflow-file push.
+  # Only an actual published Release or completed publisher may assert a build.
 
 permissions:
   contents: read
