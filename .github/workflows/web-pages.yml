@@ -54,3 +54,51 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify exact deployed Pages HTML and assets over HTTPS
+        # A successful deploy action alone does not prove the public URL serves
+        # this commit. Check the actual remote index and immutable Vite assets.
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          import re
+          import time
+          from urllib.parse import urljoin
+          from urllib.request import Request, urlopen
+
+          root = Path("apps/web/dist")
+          expected_html = (root / "index.html").read_text(encoding="utf-8")
+          refs = re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', expected_html)
+          assert refs and any(ref.endswith(".js") for ref in refs), "No built JS asset in index.html"
+          page_url = __import__("os").environ["PAGE_URL"]
+          assert page_url.startswith("https://"), f"Not an HTTPS Pages URL: {page_url}"
+          print(f"Checking public Pages URL: {page_url}")
+          print(f"Expected immutable assets: {refs}")
+
+          def fetch(url):
+              request = Request(url, headers={"User-Agent": "ActivityTracker-Pages-Smoke/1.0", "Cache-Control": "no-cache"})
+              with urlopen(request, timeout=20) as response:
+                  assert response.status == 200, f"{url} returned {response.status}"
+                  return response.read()
+
+          for attempt in range(1, 19):
+              try:
+                  remote_html = fetch(page_url).decode("utf-8")
+                  assert '<div id="root">' in remote_html, "Missing React mount point"
+                  for ref in refs:
+                      assert ref in remote_html, f"Live index is not yet the current build: {ref}"
+                      local = root / "assets" / Path(ref).name
+                      assert local.is_file(), f"Missing local asset: {local}"
+                      remote_bytes = fetch(urljoin(page_url, ref))
+                      assert hashlib.sha256(remote_bytes).digest() == hashlib.sha256(local.read_bytes()).digest(), f"Asset differs from deployed build: {ref}"
+                  print(f"PASS: public Pages HTML and {len(refs)} JS/CSS assets match this exact build")
+                  break
+              except Exception as exc:
+                  if attempt == 18:
+                      raise
+                  print(f"Pages propagation check {attempt}/18: {exc}; retrying in 10s", flush=True)
+                  time.sleep(10)
+          PY
