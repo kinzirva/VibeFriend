@@ -65,42 +65,43 @@ Add-Type -AssemblyName System.Windows.Forms
 
 #[cfg(target_os = "macos")]
 fn activate_second_app() {
-    // Launch Calculator through Launch Services, then request foreground
-    // activation explicitly. The macOS `open` tool has no `--activate` flag.
+    // Finder is already running in the hosted desktop session; open a real
+    // Finder window so activation has a visible target (Finder may launch
+    // without an active GUI window on macOS 15 hosted runners).
     let result = std::process::Command::new("open")
-        .args(["-a", "Calculator"])
+        .args(["-a", "Finder", std::env::var("HOME").as_deref().unwrap_or("/Users/runner")])
         .status()
-        .expect("launch and activate Calculator");
-    assert!(result.success(), "Calculator did not launch");
+        .expect("launch and activate Finder");
+    assert!(result.success(), "Finder did not launch");
     let result = std::process::Command::new("osascript")
-        .args(["-e", "tell application \"Calculator\" to activate"])
+        .args(["-e", "tell application \"Finder\" to activate"])
         .status()
-        .expect("activate Calculator");
-    assert!(result.success(), "Calculator did not activate");
+        .expect("activate Finder");
+    assert!(result.success(), "Finder did not activate");
     // A hosted GUI may accept the AppleScript activate command without
     // transferring foreground focus. Try an explicit process activation,
     // but keep the real NSWorkspace foreground assertion mandatory.
     let result = std::process::Command::new("osascript")
         .args([
             "-e",
-            "tell application \"System Events\" to set frontmost of process \"Calculator\" to true",
+            "tell application \"System Events\" to set frontmost of process \"Finder\" to true",
         ])
         .status()
-        .expect("request Calculator process foreground");
+        .expect("request Finder process foreground");
     if !result.success() {
         eprintln!("System Events foreground request unavailable; trying NSRunningApplication");
     }
 
     // macOS may accept AppleScript activation while keeping TextEdit frontmost
     // (observed on the hosted macOS 15 VM). Ask AppKit to activate the real
-    // Calculator process directly. Never fake the foreground detector result.
+    // Finder process directly. Never fake the foreground detector result.
     use objc::rc::autoreleasepool;
     use objc::runtime::Object;
     use objc::{class, msg_send, sel, sel_impl};
     autoreleasepool(|| unsafe {
         let bundle_id: *mut Object = msg_send![
             class!(NSString),
-            stringWithUTF8String: c"com.apple.calculator".as_ptr()
+            stringWithUTF8String: c"com.apple.finder".as_ptr()
         ];
         let running: *mut Object = msg_send![
             class!(NSRunningApplication),
@@ -111,9 +112,9 @@ fn activate_second_app() {
             if count > 0 {
                 let app: *mut Object = msg_send![running, objectAtIndex: 0usize];
                 let activated: i8 = msg_send![app, activateWithOptions: 2usize];
-                println!("NSRunningApplication Calculator activation returned {}", activated != 0);
+                println!("NSRunningApplication Finder activation returned {}", activated != 0);
             } else {
-                eprintln!("Calculator is not yet visible in NSRunningApplication");
+                eprintln!("Finder is not yet visible in NSRunningApplication");
             }
         }
     });
