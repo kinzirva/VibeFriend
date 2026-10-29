@@ -102,3 +102,27 @@ jobs:
                   print(f"Pages propagation check {attempt}/18: {exc}; retrying in 10s", flush=True)
                   time.sleep(10)
           PY
+
+      # Asset identity is not sufficient: exercise the real HTTPS app in
+      # Chromium, including browser-only privacy and CSV lifecycle.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install live-browser smoke dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Exercise actual public Pages UI in Chromium
+        working-directory: apps/web
+        env:
+          LIVE_PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        run: npx playwright test e2e/live-pages.spec.ts
+      - name: Upload failed live Pages browser trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-pages-browser-trace
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          if-no-files-found: ignore

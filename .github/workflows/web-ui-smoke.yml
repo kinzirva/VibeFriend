@@ -30,6 +30,13 @@ jobs:
       - run: npm install
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck && npm run test:csv && npm run test:ui --workspace @vibefriend/web
+      # PR-only preflight against the CURRENT public Pages version. The
+      # exact new main build is re-tested after deployment in web-pages.yml.
+      - name: Preflight real public Pages Chromium smoke
+        working-directory: apps/web
+        env:
+          LIVE_PAGES_URL: https://kinzirva.github.io/VibeFriend/
+        run: npx playwright test e2e/live-pages.spec.ts
       - name: Upload failed browser trace
         if: failure()
         uses: actions/upload-artifact@v4
