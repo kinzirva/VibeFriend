@@ -52,6 +52,81 @@ APPLESCRIPT
 done
 test "$pressed" -eq 1 || { echo '::error::Native Delete UI inaccessible'; exit 1; }
 
+# P0 negative control: clicking Cancel in the *installed* WKWebView must
+# preserve every production row. Browser mocks cannot prove native AX/IPC
+# cancellation. Both actions must be visible before we press Cancel.
+cancelled=0
+for attempt in $(seq 1 8); do
+  if output="$(osascript - "$app_pid" 2>&1 <<'APPLESCRIPT'
+on run argv
+  set targetPid to (item 1 of argv) as integer
+  tell application "System Events"
+    set p to first application process whose unix id is targetPid
+    set frontmost of p to true
+    delay 1
+    set elements to entire contents of p
+    set cancelButton to missing value
+    set hasDelete to false
+    repeat with e in elements
+      try
+        if (role of e as text) is "AXButton" then
+          set n to (name of e) as text
+          if n is "Cancel" then set cancelButton to e
+          if n is "Delete all data" then set hasDelete to true
+        end if
+      end try
+    end repeat
+    if hasDelete and cancelButton is not missing value then
+      perform action "AXPress" of cancelButton
+      return "Pressed installed WKWebView in-app Cancel (Delete all data also visible)"
+    end if
+    error "Cancel/Delete all data buttons not both accessible"
+  end tell
+end run
+APPLESCRIPT
+)"; then echo "$output"; cancelled=1; break; fi
+  echo "macOS native Cancel AX attempt $attempt/8: $output" >&2
+  if [ "$attempt" -lt 8 ]; then sleep 2; fi
+done
+test "$cancelled" -eq 1 || { echo '::error::Could not cancel installed WKWebView Delete dialog'; exit 1; }
+sleep 2
+daily_cancel="$(sqlite3 "$db" 'SELECT count(*) FROM activity;')"
+events_cancel="$(sqlite3 "$db" 'SELECT count(*) FROM activity_events;')"
+test "$daily_cancel" = "$daily" && test "$events_cancel" = "$events" || {
+  echo "::error::Cancel unexpectedly modified production SQLite ($daily/$events -> $daily_cancel/$events_cancel)"; exit 1;
+}
+echo "PASS: installed macOS WKWebView Delete Cancel preserved production SQLite ($daily daily / $events events)"
+
+# Reopen the actual Delete dialog after Cancel. The following affirmative
+# confirmation must be a separate user action, not a lingering stale dialog.
+pressed=0
+for attempt in $(seq 1 8); do
+  if output="$(osascript - "$app_pid" 2>&1 <<'APPLESCRIPT'
+on run argv
+  set targetPid to (item 1 of argv) as integer
+  tell application "System Events"
+    set p to first application process whose unix id is targetPid
+    set frontmost of p to true
+    delay 1
+    set elements to entire contents of p
+    repeat with e in elements
+      try
+        if (role of e as text) is "AXButton" and (name of e as text) is "Delete local data" then
+          perform action "AXPress" of e
+          return "Reopened installed WKWebView Delete local data after Cancel"
+        end if
+      end try
+    end repeat
+    error "Delete local data AXButton absent after Cancel"
+  end tell
+end run
+APPLESCRIPT
+)"; then echo "$output"; pressed=1; break; fi
+  echo "macOS native reopen Delete AX attempt $attempt/8: $output" >&2
+  if [ "$attempt" -lt 8 ]; then sleep 2; fi
+done
+test "$pressed" -eq 1 || { echo '::error::Cannot reopen native Delete after Cancel'; exit 1; }
+
 # Use the app's explicit accessible confirmation rather than WKWebView's
 # JavaScript window.confirm (whose buttons are not exposed reliably in macOS
 # hosted VMs). Require BOTH affirmative and Cancel buttons in the real UI;
