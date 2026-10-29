@@ -43,6 +43,7 @@ export default function App() {
   });
   const [timeline, setTimeline] = useState<ActivityEvent[]>([]);
   const [tracking, setTracking] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [period, setPeriod] = useState<"today" | "week" | "all">("today");
   const [mode, setMode] = useState<"desktop" | "web">(isDesktop() ? "desktop" : "web");
   const [status, setStatus] = useState("Tracking is off until you explicitly start it. Data stays local.");
@@ -209,7 +210,8 @@ export default function App() {
   };
 
   const clearDesktopData = async () => {
-    if (!isDesktop() || desktopMutationPending.current || !window.confirm("Permanently delete all local activity records and pause tracking?")) return;
+    if (!isDesktop() || desktopMutationPending.current || !confirmDelete) return;
+    setConfirmDelete(false);
     desktopMutationPending.current = true;
     refreshRevision.current++;
     try {
@@ -320,10 +322,22 @@ export default function App() {
           <div className="actions">
             {!isDesktop() && <label className="secondary fileButton">Import CSV<input type="file" accept=".csv,text/csv" onChange={(event) => void importCsv(event)} /></label>}
             {!isDesktop() && <button className="secondary" onClick={clearWebData}>Clear data</button>}
-            {isDesktop() && <button className="secondary" onClick={() => void clearDesktopData()}>Delete local data</button>}
+            {isDesktop() && <button className="secondary" onClick={() => setConfirmDelete(true)}>Delete local data</button>}
             <button className="primary" onClick={() => void exportCsv()}>Export CSV</button>
           </div>
         </div>
+        {isDesktop() && confirmDelete && (
+          <div className="deleteConfirm" role="alertdialog" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-detail">
+            <div>
+              <strong id="delete-confirm-title">Delete all local activity?</strong>
+              <p id="delete-confirm-detail">This permanently clears local activity and timeline records and pauses tracking.</p>
+            </div>
+            <div className="deleteConfirmActions">
+              <button className="secondary" autoFocus onClick={() => setConfirmDelete(false)}>Cancel</button>
+              <button className="danger" onClick={() => void clearDesktopData()}>Delete all data</button>
+            </div>
+          </div>
+        )}
         <div className="table">
           <div className="tableRow tableHead"><span>Date</span><span>Application</span><span>Duration</span></div>
           {filteredRows.slice(0, 12).map((row, index) => (
