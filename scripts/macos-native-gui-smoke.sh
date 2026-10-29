@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Experimental GitHub-hosted macOS 15 acceptance of the installed *real*
+# Required GitHub-hosted macOS 15 acceptance of the installed *real*
 # Tauri/WKWebView UI -> native IPC -> SQLite collector path.
-# Not a physical Mac test. Do not turn this into a release gate until green.
+# This gates publishing, but does not substitute for physical-Mac testing or signing.
 set -euo pipefail
 
 dmg="$(find native-release -maxdepth 1 -name '*.dmg' -type f -print -quit)"
