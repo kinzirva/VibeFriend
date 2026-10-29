@@ -13,10 +13,33 @@ unsafe extern "C" {
     fn NSApplicationLoad() -> bool;
 }
 
+// NSWorkspace.frontmostApplication is KVO-backed and refreshes via AppKit
+// notifications delivered on the main run loop. Unlike the Tauri GUI, this
+// standalone CLI probe otherwise has no running main loop and would cache the
+// first app forever, even after a genuine OS foreground switch.
+#[cfg(target_os = "macos")]
+fn pump_gui_events(duration: Duration) {
+    use std::ffi::c_void;
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        static kCFRunLoopDefaultMode: *const c_void;
+        fn CFRunLoopRunInMode(mode: *const c_void, seconds: f64, return_after_source_handled: u8) -> i32;
+    }
+    unsafe {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, duration.as_secs_f64(), 0);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pump_gui_events(duration: Duration) {
+    thread::sleep(duration);
+}
+
 fn wait_for_foreground(expected: &str, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     let mut last_observed = None;
     while Instant::now() < deadline {
+        pump_gui_events(Duration::from_millis(500));
         last_observed = foreground_application();
         if last_observed
             .as_deref()
@@ -24,7 +47,6 @@ fn wait_for_foreground(expected: &str, timeout: Duration) {
         {
             return;
         }
-        thread::sleep(Duration::from_millis(500));
     }
     panic!(
         "expected foreground application {expected:?}, last observed {last_observed:?} after {timeout:?}"
