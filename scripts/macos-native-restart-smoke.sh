@@ -30,36 +30,45 @@ app_pid=$!
 trap 'kill "$app_pid" 2>/dev/null || true' EXIT
 sleep 8
 kill -0 "$app_pid" || { cat "$RUNNER_TEMP/macos-native-restart.log"; echo '::error::Restarted installed app exited'; exit 1; }
+echo "Restarted installed app PID=$app_pid bundle=$(basename "$app")"
+ps -p "$app_pid" -o pid,ppid,stat,command
 
 # A real WKWebView AX Resume button proves the newly launched UI is opted out.
 # The native UI switches to Pause when consent is enabled. Never accept a
 # missing accessibility tree or an OS automation permission failure as PASS.
 found=0
 for attempt in $(seq 1 8); do
-  if osascript - "$app_pid" <<'APPLESCRIPT'
+  if output="$(osascript - "$app_pid" 2>&1 <<'APPLESCRIPT'
 on run argv
   set targetPid to (item 1 of argv) as integer
   tell application "System Events"
     set targetProcess to first application process whose unix id is targetPid
     set frontmost of targetProcess to true
     delay 1
-    repeat with elementRef in (entire contents of targetProcess)
+    set windowCount to count of windows of targetProcess
+    set elementList to entire contents of targetProcess
+    set buttonSummary to ""
+    set buttonCount to 0
+    repeat with elementRef in elementList
       try
         set elementRole to (role of elementRef) as text
         if elementRole is "AXButton" then
+          set buttonCount to buttonCount + 1
           set elementName to (name of elementRef) as text
+          if length of buttonSummary < 600 then set buttonSummary to buttonSummary & " [" & elementName & "]
           if elementName is "Resume" then
             return "PASS: restarted installed WKWebView exposes Resume (tracking off)"
           end if
         end if
       end try
     end repeat
-    error "Restarted WKWebView has no Resume button; tracking may still be enabled"
+    error "Restarted WKWebView has no Resume: windows=" & windowCount & ", AX elements=" & (count of elementList) & ", buttons=" & buttonCount & ", names=" & buttonSummary
   end tell
 end run
 APPLESCRIPT
-  then found=1; break; fi
-  sleep 3
+)"; then echo "$output"; found=1; break; fi
+  echo "macOS restart AX probe $attempt/8: $output" >&2
+  if [ "$attempt" -lt 8 ]; then sleep 3; fi
 done
 test "$found" -eq 1 || { echo '::error::Restarted native GUI did not show opt-out Resume'; exit 1; }
 
