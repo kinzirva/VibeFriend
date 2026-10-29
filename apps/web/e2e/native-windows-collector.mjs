@@ -95,6 +95,56 @@ try {
   expect(await activity()).toEqual(pausedRows);
   expect(await timeline()).toEqual(pausedEvents);
 
+  // Deep P0 report check: these are REAL native SQLite rows and foreground
+  // events from the installed collector, not seeded browser data or mock IPC.
+  const nativeNotepadRows = pausedRows.filter((row) => row.app.toLowerCase() === "notepad");
+  const nativeNotepadEvents = pausedEvents.filter((event) => event.app.toLowerCase() === "notepad");
+  expect(nativeNotepadRows.length).toBeGreaterThan(0);
+  expect(nativeNotepadEvents.length).toBeGreaterThan(0);
+  expect(nativeNotepadRows.reduce((sum, row) => sum + row.seconds, 0))
+    .toBe(nativeNotepadEvents.reduce((sum, event) => sum + event.seconds, 0));
+
+  // Every persisted daily aggregate must round-trip through the real native
+  // export_csv IPC, including the exact date, app label and seconds.
+  const exported = await csv();
+  for (const row of pausedRows) {
+    const safeApp = /^[=+\-@\t\r]/.test(row.app) ? "'" + row.app : row.app;
+    const escapedApp = safeApp.replace(/"/g, '""');
+    expect(exported).toContain(`${row.day},"${escapedApp}",${row.seconds}\n`);
+  }
+  expect(exported.trimEnd().split("\n")).toHaveLength(pausedRows.length + 1);
+
+  // Verify that the *installed* WebView2 dashboard renders the same persisted
+  // activity in its All-time report and its recent native event timeline.
+  await page.getByRole("button", { name: "All time", exact: true }).click();
+  const dailyPanel = page.locator(".panel.timeline").first();
+  const recentPanel = page.locator(".panel.timeline").last();
+  const notepadDaily = dailyPanel.locator(".tableRow").filter({ hasText: /notepad/i });
+  const notepadRecent = recentPanel.locator(".tableRow").filter({ hasText: /notepad/i });
+  await expect(notepadDaily.first()).toBeVisible({ timeout: 15000 });
+  await expect(notepadDaily.first()).toContainText(nativeNotepadRows[0].day);
+  await expect(notepadRecent.first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".metrics article").nth(1).locator("strong"))
+    .toHaveText(String(new Set(pausedRows.map((row) => row.app)).size));
+
+  // Today/This week boundaries are covered deterministically in dashboard
+  // Playwright; additionally exercise both on the real native sample when its
+  // local day matches the current Windows runner calendar day.
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"),
+      String(d.getDate()).padStart(2, "0")].join("-");
+  });
+  if (nativeNotepadRows.some((row) => row.day === today)) {
+    for (const label of ["Today", "This week"]) {
+      await page.getByRole("button", { name: label, exact: true }).click();
+      await expect(notepadDaily.first()).toBeVisible();
+    }
+  } else {
+    console.log("Native Today/This week report assertions skipped at local midnight boundary; All time verified");
+  }
+  console.log(`PASS: real Windows SQLite daily totals == event seconds == native CSV; installed WebView2 report/timeline UI consistent (${pausedRows.length} daily rows, ${pausedEvents.length} events)`);
+
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete local data", exact: true }).click();
   await expect.poll(tracking).toBe(false);
