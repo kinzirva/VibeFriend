@@ -229,3 +229,31 @@ jobs:
           (cd "$verify_dir" && sha256sum --check SHA256SUMS.txt)
           echo "GitHub Release $TAG: downloaded EXE, DMG and manifest; hashes verified"
 
+
+  native-macos-gui-probe:
+    name: macOS installed WKWebView GUI/IPC P0 smoke
+    needs: desktop
+    runs-on: macos-15
+    timeout-minutes: 20
+    # This is a required hosted-VM functional check: real installed WKWebView
+    # AXPress -> production Tauri IPC -> TextEdit sampling in SQLite -> Pause.
+    # Do not treat this as physical-Mac acceptance or code signing.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: VibeFriend-macOS
+          path: native-release
+
+      - name: Exercise installed macOS GUI, native IPC and real foreground SQLite
+        shell: bash
+        run: bash scripts/macos-native-gui-smoke.sh
+
+      - name: Upload native macOS GUI diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeFriend-macOS-native-gui-probe-log
+          path: ${{ runner.temp }}/macos-native-gui.log
+          if-no-files-found: ignore
