@@ -52,10 +52,10 @@ APPLESCRIPT
 done
 test "$pressed" -eq 1 || { echo '::error::Native Delete UI inaccessible'; exit 1; }
 
-# WKWebView window.confirm is a native two-button confirmation. A blind
-# Return may choose Cancel (or target the wrong window), so explicitly AXPress
-# the affirmative button ONLY when the paired Cancel button is visible.
-# Capture the complete button inventory on failure; do not bypass consent.
+# Use the app's explicit accessible confirmation rather than WKWebView's
+# JavaScript window.confirm (whose buttons are not exposed reliably in macOS
+# hosted VMs). Require BOTH affirmative and Cancel buttons in the real UI;
+# never bypass the user-facing consent confirmation or delete via direct SQL.
 confirmed=0
 for attempt in $(seq 1 8); do
   if output="$(osascript - "$app_pid" 2>&1 <<'APPLESCRIPT'
@@ -75,27 +75,23 @@ on run argv
           set n to (name of e) as text
           if length of buttonNames < 1200 then set buttonNames to buttonNames & " [" & n & "]"
           if n is "Cancel" then set hasCancel to true
-          if n is "OK" or n is "Delete" or n is "Yes" or n is "Confirm" then set confirmButton to e
+          if n is "Delete all data" then set confirmButton to e
         end if
       end try
     end repeat
     if hasCancel and confirmButton is not missing value then
       perform action "AXPress" of confirmButton
-      return "Pressed affirmative native WKWebView confirmation (paired Cancel visible)"
+      return "Pressed installed WKWebView in-app Delete all data (paired Cancel visible)"
     end if
-    error "Native confirmation buttons unavailable; windows=" & (count of windows of p) & ", names=" & buttonNames
+    error "In-app confirmation unavailable; windows=" & (count of windows of p) & ", buttons=" & buttonNames
   end tell
 end run
 APPLESCRIPT
-)"; then
-    echo "$output"
-    confirmed=1
-    break
-  fi
-  echo "macOS native confirmation AX attempt $attempt/8: $output" >&2
+)"; then echo "$output"; confirmed=1; break; fi
+  echo "macOS in-app confirmation AX attempt $attempt/8: $output" >&2
   if [ "$attempt" -lt 8 ]; then sleep 2; fi
 done
-test "$confirmed" -eq 1 || { echo '::error::Could not explicitly confirm native WKWebView Delete dialog'; exit 1; }
+test "$confirmed" -eq 1 || { echo '::error::Could not explicitly confirm installed WKWebView Delete dialog'; exit 1; }
 cleared=0
 for attempt in $(seq 1 10); do
   daily_after="$(sqlite3 "$db" 'SELECT count(*) FROM activity;')"
