@@ -137,6 +137,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Native WebView2 IPC smoke failed: $LASTEXITCODE" }
             node apps/web/e2e/native-windows-collector.mjs
             if ($LASTEXITCODE -ne 0) { throw "Installed Windows real-collector GUI/SQLite smoke failed: $LASTEXITCODE" }
+            # Run LAST: this deliberately locks the ephemeral Windows session.
+            # It requires a real Win32 desktop transition and production SQLite
+            # no-growth evidence. Never substitute pure eligibility unit tests.
+            node apps/web/e2e/native-windows-lock.mjs
+            if ($LASTEXITCODE -ne 0) { throw "Real Windows OS lock/SQLite P0 probe failed: $LASTEXITCODE" }
           } finally {
             Write-Host "Windows native GUI diagnostics:"
             try {
