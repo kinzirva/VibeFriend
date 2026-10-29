@@ -173,7 +173,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "vibefriend-activity.csv";
+      link.download = "activitytracker-activity.csv";
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
@@ -230,7 +230,7 @@ export default function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">VIBEFRIEND / {mode.toUpperCase()}</div>
+          <div className="eyebrow">ACTIVITYTRACKER / {mode.toUpperCase()}</div>
           <h1>Your time, without surveillance.</h1>
           <p>Private activity tracking for Windows and macOS, with a reusable web dashboard.</p>
         </div>
