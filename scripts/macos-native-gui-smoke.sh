@@ -36,8 +36,11 @@ echo "Installed macOS app launched: PID=$app_pid"
 # A real AXPress on a WKWebView button is required. Never inject mock IPC or
 # write synthetic SQLite rows. TCC denial must fail visibly, not be skipped.
 ui_button() {
-  local label="$1" operation="$2"
-  osascript - "$app_pid" "$label" "$operation" <<'APPLESCRIPT'
+  local label="$1" operation="$2" output=""
+  # WKWebView accessibility exposure may lag behind process startup. Retry,
+  # but never turn an inaccessible/absent button into a passing result.
+  for attempt in $(seq 1 8); do
+    if output="$(osascript - "$app_pid" "$label" "$operation" 2>&1 <<'APPLESCRIPT'
 on run argv
   set targetPid to (item 1 of argv) as integer
   set targetLabel to item 2 of argv
@@ -46,22 +49,37 @@ on run argv
     set targetProcess to first application process whose unix id is targetPid
     set frontmost of targetProcess to true
     delay 1
-    repeat with elementRef in (entire contents of targetProcess)
+    set windowCount to count of windows of targetProcess
+    set elementList to entire contents of targetProcess
+    set buttonSummary to ""
+    set buttonCount to 0
+    repeat with elementRef in elementList
       try
-        if (role of elementRef as text) is "AXButton" then
-          if (name of elementRef as text) is targetLabel then
-            if operation is "click" then
-              perform action "AXPress" of elementRef
-            end if
+        set elementRole to (role of elementRef) as text
+        if elementRole is "AXButton" then
+          set buttonCount to buttonCount + 1
+          set buttonName to (name of elementRef) as text
+          if length of buttonSummary < 600 then set buttonSummary to buttonSummary & " [" & buttonName & "]"
+          if buttonName is targetLabel then
+            if operation is "click" then perform action "AXPress" of elementRef
             return "Found native WKWebView button: " & targetLabel
           end if
         end if
       end try
     end repeat
+    error "WKWebView button '" & targetLabel & "' absent: windows=" & windowCount & ", AX elements=" & (count of elementList) & ", buttons=" & buttonCount & ", names=" & buttonSummary
   end tell
-  error "Native WKWebView accessibility button not found: " & targetLabel
 end run
 APPLESCRIPT
+)"; then
+      echo "$output"
+      return 0
+    fi
+    echo "macOS AX probe $attempt/8 ($label): $output" >&2
+    if [ "$attempt" -lt 8 ]; then sleep 3; fi
+  done
+  echo "::error::macOS native AX button '$label' inaccessible after retries; real GUI/IPC remains UNVERIFIED" >&2
+  return 1
 }
 
 # The UI must actually render, expose its Resume control and dispatch the
