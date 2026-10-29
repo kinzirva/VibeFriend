@@ -64,7 +64,7 @@ test("desktop dashboard calls consent, timeline, export and delete IPC commands"
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("vibefriend-activity.csv");
+  expect(download.suggestedFilename()).toBe("activitytracker-activity.csv");
   expect(await readFile(await download.path(), "utf8"))
     .toBe('day,app,seconds\n2026-10-28,"Editor",5\n');
 
