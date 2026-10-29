@@ -114,11 +114,39 @@ jobs:
           if (-not $app) { throw 'Installed desktop executable missing' }
           # Enable CDP for this ephemeral CI process only. Do not ship this flag.
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'
+          Write-Host "Runner identity: $(whoami)"
+          Write-Host "PowerShell session ID: $((Get-Process -Id $PID).SessionId)"
+          Write-Host "Executable: $app"
+          Write-Host "WebView2 CDP argument enabled for this CI process only"
           $process = Start-Process -FilePath $app -PassThru
           try {
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            Write-Host "Desktop process PID=$($process.Id) session=$($process.SessionId) exited=$($process.HasExited)"
+            if ($process.HasExited) {
+              throw "Desktop executable exited before WebView2 CDP became available (exit code $($process.ExitCode))"
+            }
             node apps/web/e2e/native-windows-ipc.mjs
             if ($LASTEXITCODE -ne 0) { throw "Native WebView2 IPC smoke failed: $LASTEXITCODE" }
           } finally {
+            Write-Host "Windows native GUI diagnostics:"
+            try {
+              Get-Process | Where-Object { $_.ProcessName -match 'vibefriend|activitytracker|msedge|webview' } |
+                Select-Object ProcessName, Id, SessionId, HasExited |
+                Format-Table -AutoSize | Out-String | Write-Host
+              Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'vibefriend|activitytracker|msedgewebview' } |
+                Select-Object Name, ProcessId, SessionId, ParentProcessId, CommandLine |
+                Format-List | Out-String | Write-Host
+              Get-NetTCPConnection -LocalPort 9222 -ErrorAction SilentlyContinue |
+                Select-Object LocalAddress, LocalPort, State, OwningProcess |
+                Format-Table -AutoSize | Out-String | Write-Host
+              Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -MaxEvents 100 -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProviderName -match 'Application Error|Windows Error Reporting' -or $_.Message -match 'vibefriend|ActivityTracker|WebView2' } |
+                Select-Object -First 8 TimeCreated, ProviderName, Id, Message |
+                Format-List | Out-String | Write-Host
+            } catch {
+              Write-Host "Diagnostic collection error: $_"
+            }
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           }
 
