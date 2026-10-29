@@ -20,11 +20,13 @@ permissions:
 
 jobs:
   resolve-release:
-    # Only a successful main push can publish an alpha release. PR CI runs never publish.
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+    # A release may already have been published even if the publisher's final
+    # verification step failed. Always inspect completed main push runs.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      published: ${{ steps.release.outputs.published }}
     steps:
       - name: Resolve release tag
         id: release
@@ -32,6 +34,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
           PUBLISH_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          PUBLISH_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
           if [ -n "${EVENT_TAG:-}" ]; then
@@ -43,23 +46,38 @@ jobs:
             tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 1 --json tagName --jq '.[0].tagName')"
           fi
           test -n "$tag"
-          # Be tolerant of API propagation after the publishing workflow finishes.
-          for attempt in $(seq 1 12); do
+          # A failed publishing run may have failed BEFORE creating its release
+          # (skip), or AFTER creating it (still smoke-test that release).
+          # Allow for GitHub API propagation; never fall back to "latest".
+          max_attempts=12
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] && [ "$PUBLISH_CONCLUSION" != "success" ]; then
+            max_attempts=4
+          fi
+          found=false
+          for attempt in $(seq 1 "$max_attempts"); do
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=true
               break
             fi
-            if [ "$attempt" -eq 12 ]; then
-              echo "::error::Published release $tag not found after retries"
-              exit 1
-            fi
-            sleep 10
+            if [ "$attempt" -lt "$max_attempts" ]; then sleep 10; fi
           done
+          if [ "$found" != true ]; then
+            if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] && [ "$PUBLISH_CONCLUSION" != "success" ]; then
+              echo "::notice::No published release for unsuccessful publisher run; skipping smoke"
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::Published release $tag not found after retries"
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
           echo "Testing published release: $tag"
 
   windows-smoke:
     name: Windows installer + launch smoke
     needs: resolve-release
+    if: needs.resolve-release.outputs.published == 'true'
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -117,6 +135,7 @@ jobs:
   macos-smoke:
     name: macOS DMG + launch smoke
     needs: resolve-release
+    if: needs.resolve-release.outputs.published == 'true'
     runs-on: macos-15
     # Hosted macOS runner provisioning occasionally consumes the original 15m
     # without executing a single step; retain strict hash/install/launch checks.
