@@ -123,6 +123,18 @@ try {
   const notepadRecent = recentPanel.locator(".tableRow").filter({ hasText: /notepad/i });
   await expect(notepadDaily.first()).toBeVisible({ timeout: 15000 });
   await expect(notepadDaily.first()).toContainText(nativeNotepadRows[0].day);
+  // Native WebView2 must display the actual SQLite duration, not 0m for a
+  // positive five-second foreground sample. The browser CSV fixture alone
+  // cannot prove the installed GUI's production data path.
+  const exactDuration = (value) => [
+    Math.floor(value / 3600) > 0 ? `${Math.floor(value / 3600)}h` : "",
+    Math.floor((value % 3600) / 60) > 0 ? `${Math.floor((value % 3600) / 60)}m` : "",
+    value % 60 > 0 ? `${value % 60}s` : "",
+  ].filter(Boolean).join(" ") || "0s";
+  await expect(notepadDaily.first().locator("span").last())
+    .toHaveText(exactDuration(nativeNotepadRows[0].seconds));
+  await expect(page.locator(".metrics article").first().locator("strong"))
+    .toHaveText(exactDuration(pausedRows.reduce((sum, row) => sum + row.seconds, 0)));
   await expect(notepadRecent.first()).toBeVisible({ timeout: 15000 });
   await expect(page.locator(".metrics article").nth(1).locator("strong"))
     .toHaveText(String(new Set(pausedRows.map((row) => row.app)).size));
