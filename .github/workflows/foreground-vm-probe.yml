@@ -6,6 +6,7 @@ on:
       - apps/desktop/src-tauri/src/collector.rs
       - apps/desktop/src-tauri/src/bin/foreground_probe.rs
       - apps/desktop/src-tauri/src/bin/sampling_probe.rs
+      - apps/desktop/src-tauri/src/bin/transition_probe.rs
       - .github/workflows/foreground-vm-probe.yml
   workflow_dispatch:
   push:
@@ -14,6 +15,7 @@ on:
       - apps/desktop/src-tauri/src/collector.rs
       - apps/desktop/src-tauri/src/bin/foreground_probe.rs
       - apps/desktop/src-tauri/src/bin/sampling_probe.rs
+      - apps/desktop/src-tauri/src/bin/transition_probe.rs
       - .github/workflows/foreground-vm-probe.yml
 
 permissions:
@@ -37,7 +39,7 @@ jobs:
           npm run build:web
       - name: Compile VM diagnostic binaries before foreground activation
         working-directory: apps/desktop/src-tauri
-        run: cargo build --bin foreground_probe --bin sampling_probe
+        run: cargo build --bin foreground_probe --bin sampling_probe --bin transition_probe
       - name: Launch and foreground Notepad
         shell: pwsh
         run: |
@@ -58,6 +60,18 @@ jobs:
       - name: Verify real Windows collector samples, pauses and SQLite lifecycle
         working-directory: apps/desktop/src-tauri
         run: cargo run --bin sampling_probe -- notepad
+      - name: Reactivate Notepad and reset OS idle before two-app switch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proc = Get-Process notepad | Select-Object -First 1
+          if (-not $proc) { throw "Notepad fixture no longer running" }
+          if (-not (New-Object -ComObject WScript.Shell).AppActivate($proc.Id)) { throw "Notepad reactivation failed" }
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.SendKeys]::SendWait('{F15}')
+      - name: Verify real Windows Notepad to Task Manager transition and SQLite attribution
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin transition_probe -- notepad Taskmgr
 
   macos-foreground:
     name: macOS foreground fixture (TextEdit)
@@ -76,7 +90,7 @@ jobs:
           npm run build:web
       - name: Compile VM diagnostic binaries before foreground activation
         working-directory: apps/desktop/src-tauri
-        run: cargo build --bin foreground_probe --bin sampling_probe
+        run: cargo build --bin foreground_probe --bin sampling_probe --bin transition_probe
       - name: Launch and foreground TextEdit
         run: |
           set -euo pipefail
@@ -92,3 +106,11 @@ jobs:
       - name: Verify real macOS collector samples, pauses and SQLite lifecycle
         working-directory: apps/desktop/src-tauri
         run: cargo run --bin sampling_probe -- TextEdit
+      - name: Reactivate TextEdit and reset OS idle before two-app switch
+        run: |
+          set -euo pipefail
+          osascript -e 'tell application "TextEdit" to activate'
+          osascript -e 'tell application "System Events" to key code 113' || true
+      - name: Verify real macOS TextEdit to Finder transition and SQLite attribution
+        working-directory: apps/desktop/src-tauri
+        run: cargo run --bin transition_probe -- TextEdit Finder
