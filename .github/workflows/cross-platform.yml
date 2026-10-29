@@ -135,6 +135,8 @@ jobs:
             }
             node apps/web/e2e/native-windows-ipc.mjs
             if ($LASTEXITCODE -ne 0) { throw "Native WebView2 IPC smoke failed: $LASTEXITCODE" }
+            node apps/web/e2e/native-windows-collector.mjs
+            if ($LASTEXITCODE -ne 0) { throw "Installed Windows real-collector GUI/SQLite smoke failed: $LASTEXITCODE" }
           } finally {
             Write-Host "Windows native GUI diagnostics:"
             try {
