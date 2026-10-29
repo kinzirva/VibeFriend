@@ -108,11 +108,11 @@ try {
   // export_csv IPC, including the exact date, app label and seconds.
   const exported = await csv();
   for (const row of pausedRows) {
-    const safeApp = /^[=+\\-@\\t\\r]/.test(row.app) ? "'" + row.app : row.app;
+    const safeApp = /^[=+\-@\t\r]/.test(row.app) ? "'" + row.app : row.app;
     const escapedApp = safeApp.replace(/"/g, '""');
-    expect(exported).toContain(`${row.day},"${escapedApp}",${row.seconds}\\n`);
+    expect(exported).toContain(`${row.day},"${escapedApp}",${row.seconds}\n`);
   }
-  expect(exported.trimEnd().split("\\n")).toHaveLength(pausedRows.length + 1);
+  expect(exported.trimEnd().split("\n")).toHaveLength(pausedRows.length + 1);
 
   // Verify that the *installed* WebView2 dashboard renders the same persisted
   // activity in its All-time report and its recent native event timeline.
