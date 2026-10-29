@@ -22,10 +22,16 @@ async function invokeDesktop<T>(command: string, args?: Record<string, unknown>)
 }
 
 function formatDuration(totalSeconds: number) {
+  // P0: foreground samples are only ~5s. Rounding down to whole minutes
+  // previously displayed real, nonzero activity as "0m" in every report.
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  if (hours === 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
+  const seconds = totalSeconds % 60;
+  return [
+    hours > 0 ? `${hours}h` : "",
+    minutes > 0 ? `${minutes}m` : "",
+    seconds > 0 ? `${seconds}s` : "",
+  ].filter(Boolean).join(" ") || "0s";
 }
 
 function formatCountdown(seconds: number) {
