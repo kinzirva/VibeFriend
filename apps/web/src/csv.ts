@@ -5,7 +5,8 @@ export type ActivityRow = {
 };
 
 export function csvApp(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
+  // Some spreadsheet importers ignore leading whitespace before a formula.
+  const safe = /^(?:[\t\r]|\s*[=+\-@])/u.test(value) ? "'" + value : value;
   return '"' + safe.replace(/"/g, '""') + '"';
 }
 

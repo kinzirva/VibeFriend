@@ -189,7 +189,12 @@ impl AppState {
         let rows = self.activity()?;
         let mut output = String::from("day,app,seconds\n");
         for row in rows {
-            let app = if row.app.chars().next().is_some_and(|ch| matches!(ch, '=' | '+' | '-' | '@' | '\t' | '\r')) {
+            // Spreadsheet importers may ignore whitespace before =,+,-,@.
+            // Keep the original app name but prefix an inert apostrophe.
+            let formula_after_whitespace = row.app.trim_start().chars().next()
+                .is_some_and(|ch| matches!(ch, '=' | '+' | '-' | '@'));
+            let leading_control = row.app.starts_with('\t') || row.app.starts_with('\r');
+            let app = if formula_after_whitespace || leading_control {
                 format!("'{}", row.app)
             } else {
                 row.app
@@ -414,6 +419,20 @@ mod tests {
         );
         assert!(timeline[0].ended_at >= timeline[1].ended_at);
         assert!(timeline[1].ended_at >= timeline[2].ended_at);
+    }
+
+
+    #[test]
+    fn csv_neutralizes_formulas_after_leading_whitespace() {
+        let state = AppState::new(PathBuf::from(":memory:")).expect("database");
+        state.set_tracking(true).expect("resume");
+        for app in [" =SUM(A1)", "\t =SUM(A1)", "\n+SUM(A1)", "\u{00a0}@SUM(A1)", "\r-1+2"] {
+            state.record(app, 5, state.generation()).expect("sample");
+        }
+        let csv = state.csv().expect("CSV export");
+        for app in [" =SUM(A1)", "\t =SUM(A1)", "\n+SUM(A1)", "\u{00a0}@SUM(A1)", "\r-1+2"] {
+            assert!(csv.contains(&format!("\"'{}\",5", app)), "unsafe app prefix: {app:?}");
+        }
     }
 
 }

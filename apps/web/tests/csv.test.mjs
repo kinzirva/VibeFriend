@@ -72,3 +72,16 @@ test("CSV rejects impossible dates and non-integer durations", () => {
     assert.throws(() => parseCsv("day,app,seconds\n" + row), /Invalid activity/);
   }
 });
+
+test("CSV neutralizes leading whitespace before formulas", () => {
+  for (const app of [
+    " =SUM(A1)",
+    "\t =SUM(A1)",
+    "\n+SUM(A1)",
+    "\u00a0@SUM(A1)",
+    "\r-1+2",
+  ]) {
+    assert.equal(csvApp(app), '"' + "'" + app + '"');
+  }
+  assert.equal(csvApp("  Editor"), '"  Editor"');
+});
